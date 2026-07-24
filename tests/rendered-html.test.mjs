@@ -1,0 +1,499 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+import {
+  calculateFinance,
+  calculateRecoverySavings,
+} from "../lib/finance.ts";
+import {
+  getDemoGuideStep,
+  shouldCompleteDemoRecovery,
+} from "../lib/guide.ts";
+import {
+  calculateUncategorizedExpenseTotal,
+  inferLedgerClassification,
+  inferLedgerQuestionIntent,
+} from "../lib/ledger.ts";
+import { getCourtVocabulary } from "../lib/court.ts";
+import {
+  MAX_NEXT_CYCLE_REFERENCE,
+  parseNextCycleReferenceAmount,
+} from "../lib/reference.ts";
+
+async function render() {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+
+  return worker.fetch(
+    new Request("http://localhost/", {
+      headers: { accept: "text/html" },
+    }),
+    {
+      ASSETS: {
+        fetch: async () => new Response("Not found", { status: 404 }),
+      },
+    },
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    },
+  );
+}
+
+test("server-renders the Chaozhang prototype entry", async () => {
+  const response = await render();
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+
+  const html = await response.text();
+  assert.match(html, /<title>朝账｜让每一笔收支改变眼前的世界<\/title>/i);
+  assert.match(html, /从一座小县衙开始/);
+  assert.match(html, /进入我的账本/);
+  assert.match(html, /体验完整演示/);
+  assert.match(html, /不连接银行卡，也不会保管或划转真实资金/);
+  assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/);
+});
+
+test("entry and onboarding screens remove the desktop offset on phone widths", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const marker = "/* Mobile entry and onboarding composition */";
+  const markerIndex = styles.indexOf(marker);
+
+  assert.notEqual(markerIndex, -1, "mobile entry overrides should remain at the end of the stylesheet");
+
+  const mobileStyles = styles.slice(markerIndex);
+  assert.match(
+    mobileStyles,
+    /@media \(max-width: 820px\)[\s\S]*?\.entry-card,[\s\S]*?\.wizard-card\s*\{[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*680px;[^}]*margin:\s*0 auto;/,
+    "narrow screens must override the high-fidelity desktop card offset",
+  );
+  assert.match(
+    mobileStyles,
+    /@media \(max-width: 640px\)[\s\S]*?\.entry-card,[\s\S]*?\.wizard-card\s*\{[^}]*max-width:\s*none;[\s\S]*?\.mode-card\s*\{[^}]*grid-template-columns:\s*42px minmax\(0,\s*1fr\);[^}]*min-width:\s*0;[^}]*min-height:\s*0;/,
+    "phone mode choices should use a compact single-column composition",
+  );
+  assert.match(
+    mobileStyles,
+    /\.entry-screen,[\s\S]*?\.onboarding\s*\{[^}]*min-height:\s*100dvh;[^}]*overflow-x:\s*clip;/,
+  );
+});
+
+test("customer UI does not expose internal prototype annotations", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const forbiddenCopy = [
+    "低保真交互原型",
+    "正式PRD",
+    "原型占位",
+    "三臣同屏急奏",
+    "角色只负责演绎和解释",
+    "太监负责把事情喊出来",
+    "程序事实",
+    "MVP第三阶段",
+    "尚未开放",
+    "可修改、可删除",
+  ];
+
+  for (const copy of forbiddenCopy) {
+    assert.doesNotMatch(source, new RegExp(copy), `internal copy leaked: ${copy}`);
+  }
+
+  assert.doesNotMatch(
+    source,
+    /<small>\{role\.tone\}<\/small>/,
+    "internal role-tone metadata should not be rendered to customers",
+  );
+  assert.doesNotMatch(source, /之后仍可修改|每满7天送达一次|问AI账房/);
+});
+
+test("next-cycle category references are real persisted drafts", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /nextCycleReferences:\s*Partial<Record<BudgetKey,\s*NextCycleReference>>/);
+  assert.match(source, /candidate\.nextCycleReferences \?\? \{\}/);
+  assert.match(source, /data-testid="open-risk-reference-editor"/);
+  assert.match(source, /data-testid="open-council-reference-editor"/);
+  assert.match(source, /data-testid="next-cycle-reference-editor"/);
+  assert.match(source, /data-testid="save-next-cycle-reference"/);
+  assert.match(source, /data-testid="delete-next-cycle-reference"/);
+  assert.match(source, /仅保存为下周期草案，不改变本期额度、风险或/);
+  assert.match(source, /请先在最近流水中为待分类支出补充分类/);
+  assert.doesNotMatch(
+    source,
+    /saveRiskDecision\(`设置下周期\$\{leadingCategory\.key\}参考额度`\)/,
+    "the risk action must open a real editor instead of saving a sentence",
+  );
+});
+
+test("next-cycle reference amounts accept only positive bounded whole yuan", () => {
+  assert.equal(parseNextCycleReferenceAmount("1,200"), 1_200);
+  assert.equal(
+    parseNextCycleReferenceAmount(String(MAX_NEXT_CYCLE_REFERENCE)),
+    MAX_NEXT_CYCLE_REFERENCE,
+  );
+  assert.equal(parseNextCycleReferenceAmount("0"), null);
+  assert.equal(parseNextCycleReferenceAmount("-10"), null);
+  assert.equal(parseNextCycleReferenceAmount("99.5"), null);
+  assert.equal(parseNextCycleReferenceAmount("一千"), null);
+  assert.equal(parseNextCycleReferenceAmount(String(MAX_NEXT_CYCLE_REFERENCE + 1)), null);
+});
+
+test("risk page renders actual role cards instead of a role-design explanation", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(source, /data-testid="risk-cast"/);
+  assert.match(source, /data-testid="risk-role-card"/);
+  assert.match(source, /currentRiskCast\.map/);
+  assert.match(source, /钱粮小吏/);
+  assert.match(source, /县丞/);
+  assert.match(source, /掌灯知己/);
+  assert.doesNotMatch(source, /御前太监|户部尚书|皇后/);
+  assert.doesNotMatch(source, /<NpcStage cast=\{currentRiskCast\}/);
+  assert.match(
+    source,
+    /className="risk-role-identity"[\s\S]*?<NpcPortrait[\s\S]*?role\.name[\s\S]*?className="risk-role-dialogue"[\s\S]*?role\.line/,
+    "each role portrait and its dialogue should live in the same role card",
+  );
+  assert.match(
+    styles,
+    /\.risk-role-identity > \.npc-portrait\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*border-radius:\s*0;/s,
+  );
+  assert.match(styles, /\.risk-modal \.decision-list,[\s\S]*?position:\s*static;/);
+  assert.match(
+    styles,
+    /@media \(max-width: 640px\)[\s\S]*?\.risk-modal\s*\{[^}]*display:\s*block;[\s\S]*?\.risk-cast\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[\s\S]*?\.risk-modal \.decision-list,[\s\S]*?position:\s*relative;[^}]*inset:\s*auto;/,
+    "mobile risk content and its actions should remain in normal flow",
+  );
+});
+
+test("high-fidelity scene and character assets are wired into the UI", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const sceneAssets = [
+    "chaozhang-yamen-states-v2.png",
+    "chaozhang-prefecture-states.png",
+    "chaozhang-governor-states.png",
+    "chaozhang-rank-progression.png",
+  ];
+
+  assert.match(source, /className=\{`world-scene/);
+  assert.match(source, /npc-portrait/);
+  assert.doesNotMatch(
+    styles,
+    /url\("\/chaozhang-yamen-states\.png"\)/,
+    "the first-generation county scene should no longer drive the live UI",
+  );
+  for (const assetName of sceneAssets) {
+    assert.match(styles, new RegExp(assetName.replaceAll(".", "\\.")));
+    const asset = await readFile(new URL(`../public/${assetName}`, import.meta.url));
+    assert.ok(asset.byteLength > 1_000_000, `${assetName} should be a full scene asset`);
+  }
+  assert.match(source, /src=\{`\/npc\/\$\{kind\}-\$\{mood\}\.png`\}/);
+  assert.match(
+    styles,
+    /\.npc-portrait > img\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*contain;/s,
+  );
+  assert.doesNotMatch(styles, /chaozhang-npc-(?:trio|success|warning|alarm|council|recovery)\.png/);
+});
+
+test("rank selects the matching live scene theme", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(
+    source,
+    /const getRankTheme = \(rank: string\): RankTheme =>\s*rank === "巡抚" \? "governor" : rank === "知府" \? "prefecture" : "county";/,
+  );
+  assert.match(source, /const rankTheme = getRankTheme\(rank\);/);
+  assert.match(
+    source,
+    /className=\{`world-scene rank-theme-\$\{rankTheme\} \$\{fiscalState\} \$\{recovering \? "recovering" : ""\}`\}/,
+    "SceneWireframe should combine rank theme and fiscal state",
+  );
+});
+
+test("build page combines rank characters, offices, and real room navigation", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, />仕途图鉴</);
+  assert.match(source, /className=\{`rank-world-card \$\{relation\}`\}/);
+  assert.match(source, /className=\{`rank-world-avatar rank-index-\$\{index\}`\}/);
+  assert.match(
+    source,
+    /className=\{`rank-world-scene rank-theme-\$\{stage\.theme\} \$\{visualState\}`\}/,
+  );
+  assert.match(source, /className="rank-room-nav"/);
+  assert.match(source, /onClick=\{\(\) => setTab\("home"\)\}>进入大堂/);
+  assert.match(source, /onClick=\{\(\) => setTab\("treasury"\)\}>查看库房/);
+  assert.match(source, /onClick=\{\(\) => setTab\("council"\)\}>前往议事厅/);
+  assert.match(source, /onClick=\{\(\) => setTab\("build"\)\}>留在营造院/);
+  assert.doesNotMatch(source, />场景库<|>官阶录<|className="scene-library"/);
+});
+
+test("rank world CSS provides three office themes and collapses to one card column", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(
+    styles,
+    /\.rank-world-scene\.rank-theme-county\s*\{[^}]*background-image:\s*url\("\/chaozhang-yamen-states-v2\.png"\);/s,
+  );
+  assert.match(
+    styles,
+    /\.rank-world-scene\.rank-theme-prefecture\s*\{[^}]*background-image:\s*url\("\/chaozhang-prefecture-states\.png"\);/s,
+  );
+  assert.match(
+    styles,
+    /\.rank-world-scene\.rank-theme-governor\s*\{[^}]*background-image:\s*url\("\/chaozhang-governor-states\.png"\);/s,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 900px\)\s*\{[\s\S]*?\.rank-world-grid\s*\{[^}]*grid-template-columns:\s*1fr;/,
+    "rank and office cards should become a single column on narrow screens",
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 640px\)\s*\{[\s\S]*?\.rank-room-nav\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,
+    "room actions should remain usable on phone widths",
+  );
+});
+
+test("character portraits switch expressions and actions with product events", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const moods = ["neutral", "success", "warning", "alarm", "council", "recovery"];
+  const roles = ["comic", "advisor", "companion"];
+
+  assert.match(source, /type NpcMood\s*=/);
+  assert.match(source, /data-mood=\{mood\}/);
+  assert.match(source, /riskLevel === "deficit" \? "alarm" : "warning"/);
+  assert.match(source, /mood=\{role\.mood\}/);
+  assert.match(source, /mood="council"/);
+  assert.match(source, /didRecover \|\| recoveryCompleted \? "recovery" : "success"/);
+  assert.match(source, /className="feedback-role-identity"/);
+  assert.match(source, /className="feedback-role-dialogue"/);
+  assert.match(
+    styles,
+    /\.risk-role-identity > \.npc-portrait\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*border-radius:\s*0;/s,
+  );
+  assert.match(
+    styles,
+    /\.feedback-role-identity > \.npc-portrait\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*border-radius:\s*0;/s,
+  );
+
+  for (const role of roles) {
+    for (const mood of moods) {
+      const asset = await readFile(
+        new URL(`../public/npc/${role}-${mood}.png`, import.meta.url),
+      );
+      assert.ok(
+        asset.byteLength > 100_000,
+        `${role}-${mood} should be a real standalone portrait asset`,
+      );
+    }
+  }
+});
+
+test("open tabs synchronize persisted ledger and treasury changes", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /window\.addEventListener\("storage", syncLedgerAcrossTabs\)/);
+  assert.match(source, /event\.storageArea !== window\.localStorage \|\| event\.key !== key/);
+  assert.match(source, /hydratePrototypeState\(JSON\.parse\(event\.newValue\) as PrototypeState\)/);
+  assert.match(source, /window\.removeEventListener\("storage", syncLedgerAcrossTabs\)/);
+});
+
+test("fiscal scene uses clear customer copy and cannot leave a stretched white footer", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /建设暂停/);
+  assert.match(source, /本周期消费预算已超支，扩建停工、部分陈设收起/);
+  assert.match(source, /\$\{vocabulary\.treasury\}账面为负，陈设典卖、庭院荒废/);
+  assert.match(source, /灯火齐明、花木繁盛，官署与营造项目照常推进/);
+  assert.match(styles, /\.scene-card\s*\{[^}]*min-height:\s*0;/s);
+  assert.match(
+    styles,
+    /\.treasury-equation\.deficit\s*\{[^}]*#f8ded9[^}]*#fff5eb\);/s,
+    "deficit settlement should use a readable light warning surface",
+  );
+  assert.match(
+    styles,
+    /\.treasury-equation\.deficit h2\s*\{[^}]*color:\s*#552824;/s,
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.treasury-equation\.deficit\s*\{[^}]*linear-gradient\([^)]*#542825[^)]*#241413/s,
+  );
+});
+
+test("guide action is clickable and dark showcase overlays cannot hide their content", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(source, /data-testid="guide-primary-action"/);
+  assert.match(source, /if \(guideStep === 1\) openRecorder\("夜宵118元"\)/);
+  assert.match(styles, /\.demo-guide::after\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.match(styles, /\.demo-guide \.outline-button\.light\s*\{[^}]*pointer-events:\s*auto;/s);
+  assert.match(styles, /\.construction-card\s*\{[^}]*rgba\(255, 252, 245, 0\.96\)/s);
+});
+
+test("finance rule keeps category warnings separate from total-pool overspend", () => {
+  assert.deepEqual(calculateFinance(2_000, 7_900, 8_000), {
+    overspend: 0,
+    treasuryBalance: 2_000,
+    fiscalState: "stable",
+  });
+});
+
+test("demo overspend makes the virtual treasury negative", () => {
+  assert.deepEqual(calculateFinance(5, 2_010, 2_000), {
+    overspend: 10,
+    treasuryBalance: -5,
+    fiscalState: "deficit",
+  });
+});
+
+test("new savings restores a negative treasury without erasing the overspend fact", () => {
+  assert.deepEqual(calculateFinance(105, 2_010, 2_000), {
+    overspend: 10,
+    treasuryBalance: 95,
+    fiscalState: "strained",
+  });
+});
+
+test("negative treasury can carry forward and recover next period", () => {
+  const carriedTreasury = -500;
+  const nextPeriodSavings = 2_000;
+
+  assert.deepEqual(calculateFinance(carriedTreasury + nextPeriodSavings, 0, 8_000), {
+    overspend: 0,
+    treasuryBalance: 1_500,
+    fiscalState: "stable",
+  });
+});
+
+test("night-snack wording is classified as food before entering the ledger", () => {
+  assert.deepEqual(inferLedgerClassification("夜宵11800000元"), {
+    type: "支出",
+    category: "餐饮",
+  });
+  assert.deepEqual(inferLedgerClassification("宵夜45元"), {
+    type: "支出",
+    category: "餐饮",
+  });
+});
+
+test("a savings entry is not mistaken for a savings-progress question", () => {
+  const entry = "储蓄100元修缮县衙";
+
+  assert.equal(inferLedgerQuestionIntent(entry), null);
+  assert.deepEqual(inferLedgerClassification(entry), {
+    type: "储蓄",
+    category: "储蓄",
+  });
+  assert.equal(
+    inferLedgerQuestionIntent("我的储蓄进度怎么样？"),
+    "savings-progress",
+  );
+});
+
+test("rank vocabulary keeps county, prefecture, province, and palace stages distinct", () => {
+  assert.deepEqual(getCourtVocabulary("从九品县令"), {
+    treasury: "县库",
+    residence: "县衙",
+    emergency: "县署急奏",
+    realm: "县中",
+  });
+  assert.equal(getCourtVocabulary("知府").treasury, "府库");
+  assert.equal(getCourtVocabulary("巡抚").treasury, "藩库");
+  assert.equal(getCourtVocabulary("皇帝").treasury, "国库");
+});
+
+test("standalone NPC panels use one uncropped 2:3 stage at desktop and mobile widths", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(
+    styles,
+    /\.risk-role-card\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s,
+  );
+  assert.match(
+    styles,
+    /\.risk-role-identity\s*\{[^}]*aspect-ratio:\s*2\s*\/\s*3;/s,
+  );
+  assert.match(
+    styles,
+    /\.risk-role-identity > \.npc-portrait > img\s*\{[^}]*object-fit:\s*fill;[^}]*transform:\s*none;/s,
+  );
+  assert.match(
+    styles,
+    /\.feedback-role-card\s*\{[^}]*grid-template-columns:\s*160px minmax\(0,\s*1fr\);[^}]*justify-items:\s*stretch;/s,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width:\s*640px\)[\s\S]*?\.feedback-role-card\s*\{[^}]*grid-template-columns:\s*140px minmax\(0,\s*1fr\);[\s\S]*?\.feedback-role-identity\s*\{[^}]*width:\s*140px;[^}]*height:\s*210px;/s,
+  );
+});
+
+test("demo recovery amount is large enough to bring the treasury back", () => {
+  assert.equal(calculateRecoverySavings(-5), 100);
+  assert.equal(calculateRecoverySavings(-3_205), 3_300);
+  assert.equal(calculateRecoverySavings(95), 100);
+});
+
+test("guide moves from step four to five only after a valid recovery", () => {
+  const stepFourSignals = {
+    triggerAdded: true,
+    councilDecisionMade: true,
+    councilDone: true,
+    recoveryDone: false,
+  };
+
+  assert.equal(getDemoGuideStep(stepFourSignals), 4);
+  assert.equal(
+    shouldCompleteDemoRecovery(
+      4,
+      { type: "储蓄", amount: 100 },
+      95,
+    ),
+    true,
+  );
+  assert.equal(
+    shouldCompleteDemoRecovery(
+      4,
+      { type: "储蓄", amount: 100 },
+      -3_105,
+    ),
+    false,
+  );
+  assert.equal(
+    getDemoGuideStep({ ...stepFourSignals, recoveryDone: true }),
+    5,
+  );
+});
+
+test("unknown expenses still count toward total spending", () => {
+  const ledger = [
+    { type: "支出", amount: 11_800_000, category: "其他" },
+    { type: "收入", amount: 20_000, category: "收入" },
+    { type: "储蓄", amount: 2_000, category: "储蓄" },
+  ];
+
+  assert.equal(
+    calculateUncategorizedExpenseTotal(
+      ledger,
+      ["餐饮", "住房", "交通", "医疗", "购物", "娱乐"],
+    ),
+    11_800_000,
+  );
+});
+
+test("the reported oversized night snack forces a deficit", () => {
+  const initialExpense = 1_892;
+  const oversizedNightSnack = 11_800_000;
+
+  assert.deepEqual(calculateFinance(5, initialExpense + oversizedNightSnack, 2_000), {
+    overspend: 11_799_892,
+    treasuryBalance: -11_799_887,
+    fiscalState: "deficit",
+  });
+});
