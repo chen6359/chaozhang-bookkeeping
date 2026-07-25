@@ -5,8 +5,27 @@ export type CourtVocabulary = {
   realm: string;
 };
 
-export const getCourtVocabulary = (rank: string): CourtVocabulary => {
-  if (rank === "皇帝" || rank === "女帝") {
+type CourtRank = "county" | "prefecture" | "governor" | "regent" | "emperor" | "unknown";
+
+const resolveCourtRank = (rank: string | null | undefined): CourtRank => {
+  const normalized = typeof rank === "string"
+    ? rank.trim().replace(/\s+/g, "")
+    : "";
+
+  if (/皇帝|女帝|帝王|天子|皇上/.test(normalized)) return "emperor";
+  if (/监国|摄政王|摄政|亲王/.test(normalized)) return "regent";
+  if (/巡抚|总督|督抚/.test(normalized)) return "governor";
+  if (/知府|府尹|太守/.test(normalized)) return "prefecture";
+  if (/县令|知县|从?九品/.test(normalized)) return "county";
+  return "unknown";
+};
+
+export const getCourtVocabulary = (
+  rank: string | null | undefined,
+): CourtVocabulary => {
+  const resolvedRank = resolveCourtRank(rank);
+
+  if (resolvedRank === "emperor") {
     return {
       treasury: "国库",
       residence: "宫城",
@@ -15,7 +34,16 @@ export const getCourtVocabulary = (rank: string): CourtVocabulary => {
     };
   }
 
-  if (rank === "巡抚") {
+  if (resolvedRank === "regent") {
+    return {
+      treasury: "内库",
+      residence: "王府",
+      emergency: "监国急奏",
+      realm: "府中",
+    };
+  }
+
+  if (resolvedRank === "governor") {
     return {
       treasury: "藩库",
       residence: "行辕",
@@ -24,7 +52,7 @@ export const getCourtVocabulary = (rank: string): CourtVocabulary => {
     };
   }
 
-  if (rank === "知府") {
+  if (resolvedRank === "prefecture") {
     return {
       treasury: "府库",
       residence: "府衙",
@@ -33,7 +61,7 @@ export const getCourtVocabulary = (rank: string): CourtVocabulary => {
     };
   }
 
-  if (rank === "从九品县令") {
+  if (resolvedRank === "county") {
     return {
       treasury: "县库",
       residence: "县衙",

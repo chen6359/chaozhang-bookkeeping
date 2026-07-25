@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   calculateFinance,
   calculateRecoverySavings,
@@ -20,6 +20,20 @@ import {
   MAX_NEXT_CYCLE_REFERENCE,
   parseNextCycleReferenceAmount,
 } from "../lib/reference";
+import {
+  getFiscalStateCopy,
+  getNextRank,
+  getRankConfig,
+  getRankDisplayName,
+  getRankIndex,
+  getRankPortraitAsset,
+  getRoomConfig,
+  getSceneSprite,
+  rankConfigs,
+  type CharacterGender,
+  type RankKey,
+  type RoomKey,
+} from "../lib/world";
 
 type Mode = "real" | "demo";
 type TabKey = "home" | "treasury" | "council" | "build";
@@ -72,6 +86,8 @@ type PrototypeState = {
   riskTriggered: boolean;
   councilDone: boolean;
   councilDecision: string;
+  councilLedgerCount: number;
+  councilRound: number;
   demoRecoveryDone: boolean;
   nextCycleReferences: Partial<Record<BudgetKey, NextCycleReference>>;
 };
@@ -156,6 +172,8 @@ const createBlankRealState = (): PrototypeState => ({
   riskTriggered: false,
   councilDone: false,
   councilDecision: "",
+  councilLedgerCount: 0,
+  councilRound: 0,
   demoRecoveryDone: false,
   nextCycleReferences: {},
 });
@@ -194,6 +212,8 @@ const createDemoState = (): PrototypeState => ({
   riskTriggered: false,
   councilDone: false,
   councilDecision: "",
+  councilLedgerCount: 0,
+  councilRound: 0,
   demoRecoveryDone: false,
   nextCycleReferences: {},
 });
@@ -231,6 +251,8 @@ const hydratePrototypeState = (candidate: PrototypeState): PrototypeState => {
 
   return {
     ...candidate,
+    councilLedgerCount: candidate.councilLedgerCount ?? 0,
+    councilRound: candidate.councilRound ?? (candidate.councilDone ? 1 : 0),
     demoRecoveryDone:
       candidate.demoRecoveryDone ?? legacyRecoveryCompleted,
     nextCycleReferences,
@@ -250,20 +272,38 @@ const safePercent = (used: number, limit: number) =>
 const todayLabel = () =>
   new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric" }).format(new Date());
 
-const getCourtRoles = (rank: string) => {
-  if (rank === "巡抚") {
+const getCourtRoles = (rank: string, presentation: string) => {
+  const partnerIsMale = presentation === "女性";
+  const rankKey = getRankConfig(rank).key;
+  if (rankKey === "emperor") {
+    return {
+      comic: "御前太监",
+      advisor: "丞相",
+      companion: partnerIsMale ? "皇夫" : "皇后",
+      council: "御前议政",
+    };
+  }
+  if (rankKey === "regent") {
+    return {
+      comic: "王府掌事",
+      advisor: "中枢参议",
+      companion: partnerIsMale ? "王夫" : "王妃",
+      council: "政事堂议事",
+    };
+  }
+  if (rankKey === "governor") {
     return {
       comic: "行辕总管",
       advisor: "督府参议",
-      companion: "随行知己",
+      companion: partnerIsMale ? "随行夫君" : "随行夫人",
       council: "督府议事",
     };
   }
-  if (rank === "知府") {
+  if (rankKey === "prefecture") {
     return {
       comic: "府衙掌事",
       advisor: "州府长史",
-      companion: "随行知己",
+      companion: partnerIsMale ? "随行夫君" : "随行夫人",
       council: "州府朝会",
     };
   }
@@ -275,39 +315,99 @@ const getCourtRoles = (rank: string) => {
   };
 };
 
-type RankTheme = "county" | "prefecture" | "governor";
+const getCharacterGender = (presentation: string): CharacterGender =>
+  presentation === "女性" ? "female" : "male";
 
-const getRankTheme = (rank: string): RankTheme =>
-  rank === "巡抚" ? "governor" : rank === "知府" ? "prefecture" : "county";
+const rankMeritThresholds: Record<RankKey, number> = {
+  county: 0,
+  prefecture: 50,
+  governor: 160,
+  regent: 320,
+  emperor: 560,
+};
 
-const getRankScene = (rank: string) =>
-  rank === "巡抚" ? "督府议政厅" : rank === "知府" ? "州府大堂" : "初任县衙";
+const getRankForMerit = (
+  merit: number,
+  gender: CharacterGender,
+): string => {
+  const eligible = [...rankConfigs]
+    .reverse()
+    .find((config) => merit >= rankMeritThresholds[config.key]) ?? rankConfigs[0];
+  return getRankDisplayName(eligible.key, gender);
+};
+
+function RankPortrait({
+  rank,
+  presentation,
+  compact = false,
+  label,
+}: {
+  rank: string;
+  presentation: string;
+  compact?: boolean;
+  label?: string;
+}) {
+  const gender = getCharacterGender(presentation);
+  const portrait = getRankPortraitAsset(rank, gender);
+  const displayName = getRankDisplayName(rank, gender);
+  return (
+    <span
+      className={`rank-portrait ${compact ? "compact" : ""}`}
+      role="img"
+      aria-label={label ?? `${displayName}人物立绘`}
+      style={{
+        backgroundImage: `url("${portrait.src}")`,
+        backgroundSize: compact ? "500% 225%" : "500% 100%",
+        backgroundPosition: `${portrait.index * 25}% ${compact ? "14%" : "center"}`,
+      }}
+    />
+  );
+}
 
 function NpcPortrait({
   kind,
   name,
+  rank = "从九品县令",
+  presentation = "暂不设置",
   compact = false,
   mood = "neutral",
 }: {
   kind: FeedbackRole["kind"];
   name: string;
+  rank?: string;
+  presentation?: string;
   compact?: boolean;
   mood?: NpcMood;
 }) {
+  const rankIndex = getRankIndex(rank);
+  const moodRow =
+    mood === "warning" || mood === "alarm"
+      ? 1
+      : mood === "success" || mood === "recovery"
+        ? 2
+        : 0;
+  const companionGender =
+    presentation === "女性" ? "male" : "female";
+  const asset =
+    kind === "comic"
+      ? "/npc-comic-ranks.jpg"
+      : kind === "advisor"
+        ? "/npc-advisor-ranks.jpg"
+        : `/npc-companion-${companionGender}-ranks.jpg`;
   return (
     <span
       className={`npc-portrait npc-${kind} npc-mood-${mood} ${compact ? "compact" : ""}`}
       data-mood={mood}
+      data-rank={getRankConfig(rank).key}
       role="img"
       aria-label={`${name}角色立绘`}
+      style={{
+        backgroundImage: `url("${asset}")`,
+        backgroundSize: "500% 300%",
+        backgroundPosition: `${rankIndex * 25}% ${moodRow * 50}%`,
+      }}
     >
-      {/* Standalone local character canvases need direct object-fit control in every modal shape. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={`/npc/${kind}-${mood}.png`}
-        alt=""
-        aria-hidden="true"
-      />
+      <span className="sr-only">{name}</span>
     </span>
   );
 }
@@ -357,6 +457,7 @@ function Onboarding({
     name: "",
     presentation: "暂不设置",
     address: "大人",
+    customAddress: "",
     cycle: "自然月",
     income: "10000",
     disposable: "8000",
@@ -412,7 +513,10 @@ function Onboarding({
       ...state.profile,
       name: form.name || "未命名大人",
       presentation: form.presentation,
-      address: form.address || "大人",
+      address:
+        form.address === "自定义称呼"
+          ? form.customAddress.trim() || "大人"
+          : form.address || "大人",
       cycle: form.cycle,
       income,
       disposable: Number(form.disposable) || 0,
@@ -488,6 +592,19 @@ function Onboarding({
                 <option>自定义称呼</option>
               </select>
             </label>
+            {form.address === "自定义称呼" && (
+              <label>
+                输入你的称呼
+                <input
+                  value={form.customAddress}
+                  onChange={(event) =>
+                    setForm({ ...form, customAddress: event.target.value })
+                  }
+                  placeholder="例如：殿下、主上、阿林"
+                  autoFocus
+                />
+              </label>
+            )}
           </div>
         )}
 
@@ -657,57 +774,69 @@ function Onboarding({
 
 function SceneWireframe({
   rank,
+  presentation = "暂不设置",
+  room = "hall",
   fiscalState,
   treasuryBalance,
   recovering = false,
+  showBalance = true,
 }: {
   rank: string;
+  presentation?: string;
+  room?: RoomKey;
   fiscalState: FiscalState;
   treasuryBalance: number;
   recovering?: boolean;
+  showBalance?: boolean;
 }) {
   const vocabulary = getCourtVocabulary(rank);
-  const rankTheme = getRankTheme(rank);
-  const displayScene = getRankScene(rank);
+  const rankConfig = getRankConfig(rank);
+  const roomConfig = getRoomConfig(rank, room);
+  const sceneSprite = getSceneSprite(rank, room, fiscalState);
+  const stateCopy = getFiscalStateCopy(rank, fiscalState, room);
   const fiscalLabel =
     recovering
-      ? `${vocabulary.residence}修复中`
-      : fiscalState === "deficit"
-        ? `${vocabulary.treasury}告急`
-        : fiscalState === "strained"
-          ? "消费预算超支"
-          : "财政平稳";
+      ? `${roomConfig.name}修复中`
+      : stateCopy.label;
   const sceneCopy =
     recovering
-      ? "工匠正在补瓦修窗，灯火与花木逐步恢复"
-      : fiscalState === "deficit"
-        ? `${vocabulary.treasury}账面为负，陈设典卖、庭院荒废`
-        : fiscalState === "strained"
-          ? `本周期消费预算已超支，扩建停工、部分陈设收起`
-          : "灯火齐明、花木繁盛，官署与营造项目照常推进";
+      ? `账面回升后，${roomConfig.name}正在补瓦、归还器物并恢复灯火`
+      : stateCopy.description;
   return (
     <div
-      className={`world-scene rank-theme-${rankTheme} ${fiscalState} ${recovering ? "recovering" : ""}`}
+      className={`world-scene room-scene rank-theme-${rankConfig.theme} room-${room} ${fiscalState} ${recovering ? "recovering" : ""}`}
+      data-room={room}
+      data-rank={rankConfig.key}
       data-fiscal-state={fiscalState}
       data-transition={recovering ? "recovery" : undefined}
-      aria-label={`${displayScene}，${fiscalLabel}`}
+      aria-label={`${roomConfig.name}，${fiscalLabel}`}
     >
-      <div className="world-scene-art" aria-hidden="true" />
+      <div
+        className="world-scene-art"
+        aria-hidden="true"
+        style={{
+          backgroundImage: `url("${sceneSprite.src}")`,
+          backgroundSize: sceneSprite.backgroundSize,
+          backgroundPosition: sceneSprite.backgroundPosition,
+        }}
+      />
       <div className="world-scene-shade" aria-hidden="true" />
       <div className="world-scene-topline">
-        <span className="scene-rank">{rank}</span>
+        <span className="scene-rank">{rankConfig.residenceName} · {roomConfig.genericName}</span>
         <span className={`fiscal-state-label ${fiscalState}`}>{fiscalLabel}</span>
       </div>
       <div className="world-scene-caption">
         <div>
-          <span>当前{vocabulary.residence}</span>
-          <strong>{displayScene}</strong>
+          <span>{getRankDisplayName(rank, getCharacterGender(presentation))}治所</span>
+          <strong>{roomConfig.name}</strong>
           <small>{sceneCopy}</small>
         </div>
-        <div className="scene-treasury">
-          <span>{vocabulary.treasury}账面</span>
-          <strong className={treasuryBalance < 0 ? "negative-text" : ""}>{formatMoney(treasuryBalance)}</strong>
-        </div>
+        {showBalance && (
+          <div className="scene-treasury">
+            <span>{vocabulary.treasury}账面</span>
+            <strong className={treasuryBalance < 0 ? "negative-text" : ""}>{formatMoney(treasuryBalance)}</strong>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -740,10 +869,18 @@ function AppShell({
   const [riskOpen, setRiskOpen] = useState(false);
   const [riskDetail, setRiskDetail] = useState(false);
   const [councilStep, setCouncilStep] = useState(0);
+  const [councilExpenseOpen, setCouncilExpenseOpen] = useState(false);
   const [promotionOpen, setPromotionOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [clearBookOpen, setClearBookOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerItem | null>(null);
   const [recoveryEvent, setRecoveryEvent] = useState<RecoveryEvent | null>(null);
+  const [previewRank, setPreviewRank] = useState<RankKey>(
+    () => getRankConfig(state.profile.rank).key,
+  );
+  const [previewRoom, setPreviewRoom] = useState<RoomKey>("hall");
+  const [previewFiscalState, setPreviewFiscalState] =
+    useState<FiscalState>("stable");
   const [referenceEditor, setReferenceEditor] = useState<{
     category: BudgetKey;
     source: NextCycleReference["source"];
@@ -751,12 +888,15 @@ function AppShell({
   const [referenceAmountInput, setReferenceAmountInput] = useState("");
   const [referenceError, setReferenceError] = useState("");
   const [referenceNotice, setReferenceNotice] = useState("");
-  const confirmLock = useRef(false);
 
   useEffect(() => {
     if (state.profile.onboarded) {
       const key = mode === "real" ? realStorageKey : demoStorageKey;
-      window.localStorage.setItem(key, JSON.stringify(state));
+      try {
+        window.localStorage.setItem(key, JSON.stringify(state));
+      } catch {
+        // The prototype stays usable in-memory when browser storage is unavailable.
+      }
     }
   }, [mode, state]);
 
@@ -787,12 +927,12 @@ function AppShell({
         setReferenceEditor(null);
         setReferenceError("");
       }
+      else if (clearBookOpen) setClearBookOpen(false);
       else if (deleteTarget) setDeleteTarget(null);
       else if (settingsOpen) setSettingsOpen(false);
       else if (riskOpen) { setRiskOpen(false); setRiskDetail(false); }
       else if (feedback) setFeedback(null);
       else if (recordOpen) {
-        confirmLock.current = false;
         setManualFormOpen(false);
         setRecordOpen(false);
       }
@@ -800,7 +940,7 @@ function AppShell({
     };
     window.addEventListener("keydown", closeTopDialog);
     return () => window.removeEventListener("keydown", closeTopDialog);
-  }, [deleteTarget, feedback, promotionOpen, recordOpen, referenceEditor, riskOpen, settingsOpen]);
+  }, [clearBookOpen, deleteTarget, feedback, promotionOpen, recordOpen, referenceEditor, riskOpen, settingsOpen]);
 
   useEffect(() => {
     if (!recoveryEvent || tab !== "home" || feedback) return;
@@ -867,8 +1007,21 @@ function AppShell({
   const riskLevel: "near" | "overspent" | "deficit" =
     treasuryBalance < 0 ? "deficit" : overspend > 0 ? "overspent" : "near";
   const courtAddress = state.profile.address || "大人";
-  const courtRoles = getCourtRoles(state.profile.rank);
+  const courtRoles = getCourtRoles(
+    state.profile.rank,
+    state.profile.presentation,
+  );
   const courtVocabulary = getCourtVocabulary(state.profile.rank);
+  const characterGender = getCharacterGender(state.profile.presentation);
+  const currentRankConfig = getRankConfig(state.profile.rank);
+  const nextRankConfig = getNextRank(state.profile.rank);
+  const nextRankThreshold = nextRankConfig
+    ? rankMeritThresholds[nextRankConfig.key]
+    : rankMeritThresholds.emperor;
+  const currentRankName = getRankDisplayName(
+    currentRankConfig.key,
+    characterGender,
+  );
   const currentRiskTitle =
     riskLevel === "deficit"
       ? `${courtVocabulary.treasury}告急，${courtVocabulary.residence}陈设待典`
@@ -1049,6 +1202,15 @@ function AppShell({
       setManualFormOpen(false);
       return;
     }
+    if (
+      !/\d/.test(text) &&
+      /[？?]|怎么|如何|为什么|能不能|可以吗|建议|多少|哪里|哪了/.test(text)
+    ) {
+      setPending(null);
+      setManualFormOpen(false);
+      setParseError("账房目前能回答“这周钱花哪了”“预算还剩多少”“储蓄目标完成多少”。这句话暂时无法可靠回答，也不会误记成支出。");
+      return;
+    }
     const amountMatch = text.match(/(\d+(?:\.\d{1,2})?)/);
     if (!amountMatch) {
       setParseError("账房没认准金额，原内容已经保留。请在下面补全后继续。");
@@ -1099,9 +1261,9 @@ function AppShell({
     }
   };
 
-  const confirmEntry = () => {
-    if (!pending || pending.amount <= 0 || confirmLock.current) return;
-    confirmLock.current = true;
+  const confirmEntry = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!pending || pending.amount <= 0 || isConfirming) return;
+    event.currentTarget.disabled = true;
     setIsConfirming(true);
     setState((current) => {
       const next = structuredClone(current) as PrototypeState;
@@ -1305,7 +1467,20 @@ function AppShell({
 
   const openReferenceEditor = (source: NextCycleReference["source"]) => {
     if (!isBudgetKey(leadingCategory.key)) {
-      setReferenceNotice("请先在最近流水中为待分类支出补充分类，归类后才能设置对应分类的下周期参考额。");
+      const firstUnclassified = state.ledger.find(
+        (item) =>
+          item.type === "支出" &&
+          normalizeExpenseCategory(item.category) === "其他",
+      );
+      if (firstUnclassified) {
+        setRiskOpen(false);
+        setRiskDetail(false);
+        setReferenceNotice("");
+        setTab("treasury");
+        editItem(firstUnclassified);
+      } else {
+        setReferenceNotice("当前没有可编辑的待分类支出。");
+      }
       return;
     }
 
@@ -1402,28 +1577,33 @@ function AppShell({
 
   const finishCouncil = () => {
     if (state.councilDone) return;
-    if (mode === "demo") {
-      setState((current) => ({
-        ...current,
-        councilDone: true,
-        councilDecision: current.councilDecision || "下周期先查看三笔主要餐饮支出",
-        profile: {
-          ...current.profile,
-          rank: "知府",
-          merit: weeklyMerit,
-          scene: "州府大堂",
-        },
-      }));
+    const gender = getCharacterGender(state.profile.presentation);
+    const nextMerit = Math.min(999, state.profile.merit + weeklyMerit);
+    const nextRank = getRankForMerit(nextMerit, gender);
+    const promoted = getRankIndex(nextRank) > getRankIndex(state.profile.rank);
+    setState((current) => ({
+      ...current,
+      councilDone: true,
+      councilDecision:
+        current.councilDecision ||
+        (mode === "demo"
+          ? "下周期先查看三笔主要餐饮支出"
+          : "本次奏报维持现状"),
+      councilLedgerCount: current.ledger.length,
+      councilRound: (current.councilRound ?? 0) + 1,
+      profile: {
+        ...current.profile,
+        rank: nextRank,
+        merit: nextMerit,
+        scene: getRoomConfig(nextRank, "hall").name,
+      },
+    }));
+    if (promoted) {
+      setPreviewRank(getRankConfig(nextRank).key);
       setPromotionOpen(true);
-    } else {
-      setState((current) => ({
-        ...current,
-        councilDone: true,
-        councilDecision: current.councilDecision || "本次奏报维持现状",
-        profile: { ...current.profile, merit: Math.min(160, current.profile.merit + weeklyMerit) },
-      }));
     }
     setCouncilStep(0);
+    setCouncilExpenseOpen(false);
   };
 
   const renderHome = () => (
@@ -1484,18 +1664,40 @@ function AppShell({
         <div className="scene-card">
           <SceneWireframe
             rank={state.profile.rank}
+            presentation={state.profile.presentation}
+            room="hall"
             fiscalState={fiscalState}
             treasuryBalance={treasuryBalance}
             recovering={Boolean(recoveryEvent)}
           />
         </div>
         <div className="status-column">
-          <div className="rank-card">
-            <span className="eyebrow">当前官阶</span>
-            <strong>{state.profile.rank}</strong>
-            <p>{state.profile.name} · {state.profile.address}</p>
-            <div className="progress-line"><span style={{ width: `${Math.min(100, (state.profile.merit / (state.profile.rank === "从九品县令" ? 50 : 160)) * 100)}%` }} /></div>
-            <small>政绩 {state.profile.merit} / {state.profile.rank === "从九品县令" ? 50 : 160}</small>
+          <div className="rank-card rank-card-with-portrait">
+            <RankPortrait
+              rank={state.profile.rank}
+              presentation={state.profile.presentation}
+              label={`${state.profile.name}的${currentRankName}立绘`}
+            />
+            <div>
+              <span className="eyebrow">当前官阶</span>
+              <strong>{currentRankName}</strong>
+              <p>{state.profile.name} · {state.profile.address}</p>
+              <div className="progress-line">
+                <span
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (state.profile.merit / Math.max(nextRankThreshold, 1)) * 100,
+                    )}%`,
+                  }}
+                />
+              </div>
+              <small>
+                {nextRankConfig
+                  ? `政绩 ${state.profile.merit} / ${nextRankThreshold} · 下一阶 ${getRankDisplayName(nextRankConfig.key, characterGender)}`
+                  : `政绩 ${state.profile.merit} · 已至最高官阶`}
+              </small>
+            </div>
           </div>
           <div className="quick-facts">
             <div><span>消费池差额</span><strong className={remaining < 0 ? "negative-text" : ""}>{formatMoney(remaining)}</strong></div>
@@ -1516,7 +1718,15 @@ function AppShell({
         <section className="risk-banner" data-testid="risk-banner">
           <div className="avatar-stack" aria-label={`${currentRiskCast.length}位角色共同呈报`}>
             {currentRiskCast.map((role) => (
-              <NpcPortrait compact key={role.name} kind={role.kind} name={role.name} mood={role.mood} />
+              <NpcPortrait
+                compact
+                key={role.name}
+                kind={role.kind}
+                name={role.name}
+                mood={role.mood}
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
             ))}
           </div>
           <div>
@@ -1530,7 +1740,14 @@ function AppShell({
         </section>
       ) : (
         <section className="role-message">
-          <NpcPortrait compact kind="comic" name={courtRoles.comic} mood="neutral" />
+          <NpcPortrait
+            compact
+            kind="comic"
+            name={courtRoles.comic}
+            mood="neutral"
+            rank={state.profile.rank}
+            presentation={state.profile.presentation}
+          />
           <div>
             <span className="eyebrow">{courtRoles.comic} · 候命</span>
             <h2>账簿已经铺好，等大人落下第一笔</h2>
@@ -1574,6 +1791,16 @@ function AppShell({
       <section className="page-title">
         <div><span className="eyebrow">本周期钱粮</span><h1>{courtVocabulary.treasury}账簿</h1></div>
         <button className="primary-button" onClick={() => openRecorder()}>＋ 记一笔</button>
+      </section>
+      <section className="room-scene-shell" aria-label={`${courtVocabulary.treasury}场景`}>
+        <SceneWireframe
+          rank={state.profile.rank}
+          presentation={state.profile.presentation}
+          room="treasury"
+          fiscalState={fiscalState}
+          treasuryBalance={treasuryBalance}
+          recovering={Boolean(recoveryEvent)}
+        />
       </section>
       <section className="financial-summary">
         <div><span>本周期收入</span><strong>{formatMoney(state.profile.income)}</strong></div>
@@ -1653,10 +1880,23 @@ function AppShell({
 
   const renderCouncil = () => {
     const hasEnoughData = mode === "demo" || state.ledger.length >= 1;
+    const councilScene = (
+      <section className="room-scene-shell" aria-label={`${courtRoles.council}场景`}>
+        <SceneWireframe
+          rank={state.profile.rank}
+          presentation={state.profile.presentation}
+          room="council"
+          fiscalState={fiscalState}
+          treasuryBalance={treasuryBalance}
+          recovering={Boolean(recoveryEvent)}
+        />
+      </section>
+    );
     if (!hasEnoughData) {
       return (
         <div className="page-stack">
           <section className="page-title"><div><span className="eyebrow">有账目后即可开议</span><h1>{courtRoles.council}</h1></div></section>
+          {councilScene}
           <section className="empty-state large">
             <strong>账簿还太薄，{courtRoles.advisor}暂时无本可奏</strong>
             <span>至少记录一笔账后，即可开启第一次朝会。</span>
@@ -1672,19 +1912,51 @@ function AppShell({
             <div><span className="eyebrow">本次账情奏报已完成</span><h1>{courtRoles.council}</h1></div>
             <span className="status-pill">✓ 已完成</span>
           </section>
+          {councilScene}
           <section className="council-stage">
             <div className="council-content">
-              <NpcPortrait compact kind="advisor" name={courtRoles.advisor} mood="success" />
+              <NpcPortrait
+                compact
+                kind="advisor"
+                name={courtRoles.advisor}
+                mood="success"
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
               <p className="eyebrow">最近一次议事备忘</p>
               <h2>{state.councilDecision || "本次未保留下周期行动草案"}</h2>
               <p>本次政绩已经入账，议事备忘会保留供你回看。</p>
               <div className="report-grid">
                 <div><span>累计政绩</span><strong>{state.profile.merit}</strong></div>
-                <div><span>当前官阶</span><strong>{state.profile.rank}</strong></div>
+                <div><span>当前官阶</span><strong>{currentRankName}</strong></div>
                 <div><span>{leadingCategory.key}进度</span><strong>{leadingCategory.percent}%</strong></div>
               </div>
               {renderCurrentReferenceCard("council")}
-              <button className="primary-button" onClick={() => setTab("home")}>返回{courtVocabulary.residence}</button>
+              <div className="button-row">
+                {state.ledger.length > state.councilLedgerCount ? (
+                  <button
+                    className="primary-button"
+                    onClick={() => {
+                      setState((current) => ({
+                        ...current,
+                        councilDone: false,
+                        councilDecision: "",
+                      }));
+                      setCouncilStep(0);
+                      setCouncilExpenseOpen(false);
+                    }}
+                  >
+                    开启新一轮议事
+                  </button>
+                ) : (
+                  <button className="primary-button" onClick={() => openRecorder()}>
+                    先记一笔新账
+                  </button>
+                )}
+                <button className="secondary-button" onClick={() => setTab("home")}>
+                  返回{courtVocabulary.residence}
+                </button>
+              </div>
             </div>
           </section>
         </div>
@@ -1696,6 +1968,7 @@ function AppShell({
           <div><span className="eyebrow">本次账情奏报</span><h1>{courtRoles.council}</h1></div>
           <span className="status-pill">{mode === "demo" ? "体验奏报 · 可立即开议" : "随时可以开议"}</span>
         </section>
+        {councilScene}
         <section className="council-stage">
           <div className="council-steps">
             {["开议", "财政汇报", "核心议题", "政绩结算"].map((label, index) => (
@@ -1704,7 +1977,14 @@ function AppShell({
           </div>
           {councilStep === 0 && (
             <div className="council-content">
-              <NpcPortrait compact kind="advisor" name={courtRoles.advisor} mood="council" />
+              <NpcPortrait
+                compact
+                kind="advisor"
+                name={courtRoles.advisor}
+                mood="council"
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
               <p className="eyebrow">{courtRoles.advisor}主持</p>
               <h2>当前账本已经核清，请大人自主开议</h2>
               <p>何时开议都不会扣分；完成后，本次政绩只结算一次。</p>
@@ -1715,7 +1995,14 @@ function AppShell({
           )}
           {councilStep === 1 && (
             <div className="council-content">
-              <NpcPortrait compact kind="advisor" name={courtRoles.advisor} mood="council" />
+              <NpcPortrait
+                compact
+                kind="advisor"
+                name={courtRoles.advisor}
+                mood="council"
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
               <p className="eyebrow">{courtRoles.advisor}呈报 · 本次账情</p>
               <h2>本周期已记录支出 {formatMoney(expenseTotal)}</h2>
               <div className="report-grid">
@@ -1729,7 +2016,14 @@ function AppShell({
           )}
           {councilStep === 2 && (
             <div className="council-content">
-              <NpcPortrait compact kind="companion" name={courtRoles.companion} mood="council" />
+              <NpcPortrait
+                compact
+                kind="companion"
+                name={courtRoles.companion}
+                mood="council"
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
               <p className="eyebrow">只处理一个最重要的问题</p>
               <h2>下周期想怎样处理{leadingCategory.key}节奏？</h2>
               <p>你的选择会写入本次议事备忘，供下次奏报回看。</p>
@@ -1738,6 +2032,7 @@ function AppShell({
                   className={state.councilDecision === `先查看三笔主要${leadingCategory.key}支出` ? "selected" : ""}
                   onClick={() => {
                     setReferenceNotice("");
+                    setCouncilExpenseOpen((open) => !open);
                     setState((current) => ({
                       ...current,
                       councilDecision: `先查看三笔主要${leadingCategory.key}支出`,
@@ -1745,11 +2040,14 @@ function AppShell({
                   }}
                 >
                   <span>先查看三笔主要{leadingCategory.key}支出</span>
-                  <b>{state.councilDecision === `先查看三笔主要${leadingCategory.key}支出` ? "已选择" : "选择"}</b>
+                  <b>{councilExpenseOpen ? "收起" : "查看"}</b>
                 </button>
                 <button
                   className={state.councilDecision.startsWith(`下周期${leadingCategory.key}参考额度`) ? "selected" : ""}
-                  onClick={() => openReferenceEditor("council")}
+                  onClick={() => {
+                    setCouncilExpenseOpen(false);
+                    openReferenceEditor("council");
+                  }}
                   data-testid="open-council-reference-editor"
                 >
                   <span>
@@ -1763,6 +2061,7 @@ function AppShell({
                   className={state.councilDecision === "维持现状，继续观察" ? "selected" : ""}
                   onClick={() => {
                     setReferenceNotice("");
+                    setCouncilExpenseOpen(false);
                     setState((current) => ({ ...current, councilDecision: "维持现状，继续观察" }));
                   }}
                 >
@@ -1770,6 +2069,23 @@ function AppShell({
                   <b>{state.councilDecision === "维持现状，继续观察" ? "已选择" : "选择"}</b>
                 </button>
               </div>
+              {councilExpenseOpen && (
+                <div className="risk-detail-list council-expense-list" data-testid="council-expense-list">
+                  {riskItems.length > 0 ? (
+                    riskItems.map((item) => (
+                      <div key={`${item.label}-${item.amount}`}>
+                        <span>{item.label}</span>
+                        <strong>{formatMoney(item.amount)}</strong>
+                      </div>
+                    ))
+                  ) : (
+                    <div>
+                      <span>当前分类暂无可展示流水</span>
+                      <strong>{formatMoney(0)}</strong>
+                    </div>
+                  )}
+                </div>
+              )}
               {referenceNotice && <div className="warning-box" role="status">{referenceNotice}</div>}
               {renderCurrentReferenceCard("council")}
               <button className="primary-button" disabled={!state.councilDecision} onClick={() => setCouncilStep(3)}>
@@ -1779,7 +2095,14 @@ function AppShell({
           )}
           {councilStep === 3 && (
             <div className="council-content">
-              <NpcPortrait compact kind="comic" name={courtRoles.comic} mood="success" />
+              <NpcPortrait
+                compact
+                kind="comic"
+                name={courtRoles.comic}
+                mood="success"
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
               <p className="eyebrow">本次最高80点</p>
               <h2>政绩结算</h2>
               <div className="merit-breakdown">
@@ -1807,8 +2130,7 @@ function AppShell({
   };
 
   const renderBuild = () => {
-    const currentRankIndex =
-      state.profile.rank === "巡抚" ? 2 : state.profile.rank === "知府" ? 1 : 0;
+    const currentRankIndex = getRankIndex(state.profile.rank);
     const buildFiscalLabel =
       recoveryEvent
         ? `${courtVocabulary.residence}修复中`
@@ -1817,42 +2139,52 @@ function AppShell({
           : fiscalState === "strained"
             ? "消费预算超支"
             : "财政平稳";
-    const rankStages: Array<{
-      rank: string;
-      scene: string;
-      theme: RankTheme;
-      description: string;
-      spaces: string;
-    }> = [
-      {
-        rank: "从九品县令",
-        scene: "初任县衙",
-        theme: "county",
-        description: "紧凑的一进县衙，正堂、县库和营造后院都从这里起步。",
-        spaces: "县衙大堂 · 县库 · 县署议事厅 · 营造后院",
-      },
-      {
-        rank: "知府",
-        scene: "州府大堂",
-        theme: "prefecture",
-        description: "多进州府配有仪门、回廊、幕僚院和州级仓廒，治理规模明显扩大。",
-        spaces: "州府大堂 · 府库 · 州府议事厅 · 营造院",
-      },
-      {
-        rank: "巡抚",
-        scene: "督府议政厅",
-        theme: "governor",
-        description: "督府拥有更完整的仪门轴线、辖地图亭、幕僚院和仪仗区域。",
-        spaces: "督府大堂 · 藩库 · 督府议事厅 · 营造署",
-      },
-    ];
+    const previewRankConfig = getRankConfig(previewRank);
+    const previewRoomConfig = getRoomConfig(previewRank, previewRoom);
+    const roomLabels: Record<RoomKey, string> = {
+      hall: "大堂",
+      treasury: "库房",
+      council: "议事厅",
+      works: "营造院",
+    };
+    const fiscalLabels: Record<FiscalState, string> = {
+      stable: "财政丰盈",
+      strained: "预算超支",
+      deficit: "库房亏空",
+    };
+
+    const openWorldPreview = (
+      rank: RankKey,
+      room: RoomKey = "hall",
+      previewState: FiscalState = "stable",
+    ) => {
+      setPreviewRank(rank);
+      setPreviewRoom(room);
+      setPreviewFiscalState(previewState);
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById("world-preview")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    };
+
     return (
-      <div className="page-stack">
+      <div className="page-stack build-page">
         <section className="page-title">
           <div><span className="eyebrow">储蓄改变世界</span><h1>建设与官阶</h1></div>
           <button className="outline-button" onClick={() => openRecorder(`储蓄${Math.min(100, Math.max(1, state.profile.savingsTarget - Math.max(0, treasuryBalance)))}元`)}>
             记录一笔储蓄
           </button>
+        </section>
+        <section className="room-scene-shell" aria-label={`${currentRankConfig.rooms.works.name}当前场景`}>
+          <SceneWireframe
+            rank={state.profile.rank}
+            presentation={state.profile.presentation}
+            room="works"
+            fiscalState={fiscalState}
+            treasuryBalance={treasuryBalance}
+            recovering={Boolean(recoveryEvent)}
+          />
         </section>
         <section className={`construction-card ${fiscalState}`}>
           <div>
@@ -1874,68 +2206,160 @@ function AppShell({
         <section className="section-card rank-world-section">
           <div className="rank-world-heading">
             <div>
-              <span className="eyebrow">人物与官署共同成长</span>
-              <h2>仕途图鉴</h2>
+              <span className="eyebrow">五阶人物与官署共同成长</span>
+              <h2>仕途与官署图鉴</h2>
             </div>
-            <p>官阶决定整座官署，储蓄解锁新的空间；财政变化会直接改变建筑、陈设、花木和人气。</p>
+            <p>每阶都拥有独立人物服制与四个房间；财政变化会改变建筑破损、陈设、库存、施工和人气。</p>
           </div>
           <div className="rank-world-grid">
-            {rankStages.map((stage, index) => {
+            {rankConfigs.map((stage, index) => {
               const relation =
                 index === currentRankIndex ? "current" : index < currentRankIndex ? "past" : "future";
-              const visualState =
-                relation === "current"
-                  ? recoveryEvent
-                    ? "recovering"
-                    : fiscalState
-                  : "stable";
+              const visualState = relation === "current" ? fiscalState : "stable";
+              const sceneSprite = getSceneSprite(stage.key, "hall", visualState);
               const status =
                 relation === "current"
                   ? "当前官阶"
                   : relation === "past"
                     ? "历任官署"
                     : index === currentRankIndex + 1
-                      ? "下一段仕途预览"
-                      : "更高仕途预览";
+                      ? `下一阶 · 政绩${rankMeritThresholds[stage.key]}开启`
+                      : `预览 · 政绩${rankMeritThresholds[stage.key]}开启`;
+              const rankName = getRankDisplayName(stage.key, characterGender);
 
               return (
-                <article className={`rank-world-card ${relation}`} key={stage.rank}>
+                <article className={`rank-world-card ${relation}`} key={stage.key}>
                   <div className="rank-world-visual">
-                    <div
-                      className={`rank-world-avatar rank-index-${index}`}
-                      role="img"
-                      aria-label={`${stage.rank}官服人物`}
+                    <RankPortrait
+                      rank={stage.key}
+                      presentation={state.profile.presentation}
+                      label={`${rankName}人物立绘`}
                     />
                     <div
                       className={`rank-world-scene rank-theme-${stage.theme} ${visualState}`}
                       role="img"
-                      aria-label={`${stage.scene}，${relation === "current" ? buildFiscalLabel : status}`}
+                      aria-label={`${stage.rooms.hall.name}，${relation === "current" ? buildFiscalLabel : status}`}
+                      style={{
+                        backgroundImage: `url("${sceneSprite.src}")`,
+                        backgroundSize: sceneSprite.backgroundSize,
+                        backgroundPosition: sceneSprite.backgroundPosition,
+                      }}
                     >
                       <div className="rank-world-scene-labels">
                         <span>{status}</span>
-                        <strong>{stage.scene}</strong>
+                        <strong>{stage.rooms.hall.name}</strong>
                       </div>
                     </div>
                   </div>
                   <div className="rank-world-copy">
                     <div>
-                      <h3>{stage.rank}</h3>
+                      <h3>{rankName}</h3>
                       <span className="rank-status">{status}</span>
                     </div>
-                    <p>{stage.description}</p>
-                    <small>{stage.spaces}</small>
+                    <p>{stage.buildingScale}</p>
+                    <small>{Object.values(stage.rooms).map((room) => room.name).join(" · ")}</small>
+                    <button
+                      className="outline-button rank-preview-button"
+                      onClick={() => openWorldPreview(stage.key, "hall", visualState)}
+                      data-testid={`preview-rank-${stage.key}`}
+                    >
+                      预览人物与四个房间
+                    </button>
                     {relation === "current" && (
-                      <nav className="rank-room-nav" aria-label={`${stage.rank}官署空间`}>
+                      <nav className="rank-room-nav" aria-label={`${rankName}官署空间`}>
                         <button onClick={() => setTab("home")}>进入大堂</button>
                         <button onClick={() => setTab("treasury")}>查看库房</button>
                         <button onClick={() => setTab("council")}>前往议事厅</button>
-                        <button onClick={() => setTab("build")}>留在营造院</button>
+                        <button onClick={() => openWorldPreview(stage.key, "works", fiscalState)}>查看营造院</button>
                       </nav>
                     )}
                   </div>
                 </article>
               );
             })}
+          </div>
+        </section>
+        <section className="section-card world-preview-section" id="world-preview">
+          <div className="rank-world-heading">
+            <div>
+              <span className="eyebrow">官署志</span>
+              <h2>阅览五阶治所</h2>
+            </div>
+            <p>任选官阶、空间与府库景况，看看不同仕途下的治所风貌。</p>
+          </div>
+          <div className="world-preview-controls" aria-label="场景预览控制">
+            <fieldset>
+              <legend>官阶</legend>
+              <div className="control-chip-row">
+                {rankConfigs.map((rank) => (
+                  <button
+                    className={previewRank === rank.key ? "active" : ""}
+                    key={rank.key}
+                    onClick={() => setPreviewRank(rank.key)}
+                    data-testid={`world-rank-${rank.key}`}
+                  >
+                    {getRankDisplayName(rank.key, characterGender)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>房间</legend>
+              <div className="control-chip-row">
+                {(Object.keys(roomLabels) as RoomKey[]).map((room) => (
+                  <button
+                    className={previewRoom === room ? "active" : ""}
+                    key={room}
+                    onClick={() => setPreviewRoom(room)}
+                    data-testid={`world-room-${room}`}
+                  >
+                    {roomLabels[room]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>财政状态</legend>
+              <div className="control-chip-row">
+                {(Object.keys(fiscalLabels) as FiscalState[]).map((value) => (
+                  <button
+                    className={previewFiscalState === value ? "active" : ""}
+                    key={value}
+                    onClick={() => setPreviewFiscalState(value)}
+                    data-testid={`world-fiscal-${value}`}
+                  >
+                    {fiscalLabels[value]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+          <div className="world-preview-stage">
+            <div className="preview-character-card">
+              <RankPortrait
+                rank={previewRank}
+                presentation={state.profile.presentation}
+                label={`${getRankDisplayName(previewRank, characterGender)}完整人物立绘`}
+              />
+              <span className="eyebrow">仕途形象</span>
+              <h3>{getRankDisplayName(previewRank, characterGender)}</h3>
+              <p>{previewRankConfig.attire}</p>
+              <small>{previewRankConfig.poses[previewFiscalState]}</small>
+            </div>
+            <div className="preview-scene-card">
+              <SceneWireframe
+                rank={previewRank}
+                presentation={state.profile.presentation}
+                room={previewRoom}
+                fiscalState={previewFiscalState}
+                treasuryBalance={treasuryBalance}
+                showBalance={false}
+              />
+              <div className="preview-scene-note">
+                <strong>{previewRoomConfig.name}</strong>
+                <span>{previewRoomConfig.visualAnchor}</span>
+              </div>
+            </div>
           </div>
         </section>
       </div>
@@ -1959,9 +2383,16 @@ function AppShell({
       <div className="app-layout">
         <aside className="sidebar" aria-label="主要导航">
           <div className="nav-profile">
-            <span>{state.profile.presentation === "女性" ? "女" : state.profile.presentation === "男性" ? "男" : "人"}</span>
-            <strong>{state.profile.name}</strong>
-            <small>{state.profile.rank}</small>
+            <RankPortrait
+              compact
+              rank={state.profile.rank}
+              presentation={state.profile.presentation}
+              label={`${state.profile.name}的${currentRankName}立绘`}
+            />
+            <div>
+              <strong>{state.profile.name}</strong>
+              <small>{currentRankName}</small>
+            </div>
           </div>
           <nav>
             {tabItems.map((item) => (
@@ -1982,7 +2413,7 @@ function AppShell({
           </div>
         </aside>
 
-        <section className="main-content" id="main-content" tabIndex={-1}>
+        <section className={`main-content tab-${tab}`} id="main-content" tabIndex={-1}>
           {tab === "home" && renderHome()}
           {tab === "treasury" && renderTreasury()}
           {tab === "council" && renderCouncil()}
@@ -2021,7 +2452,6 @@ function AppShell({
                 className="icon-button"
                 aria-label="关闭记账窗口"
                 onClick={() => {
-                  confirmLock.current = false;
                   setManualFormOpen(false);
                   setRecordOpen(false);
                 }}
@@ -2054,7 +2484,7 @@ function AppShell({
                   <button className="primary-button" onClick={parseRecord}>让账房识别</button>
                   <button className="secondary-button" onClick={openManualForm}>改用手动填写</button>
                 </div>
-                <small className="recognition-note">当前演示使用本地识别规则，不会上传你的账目文本。</small>
+                <small className="recognition-note">账房只在本机识别这段文字，不会上传你的账目内容。</small>
                 {parseError && <div className="error-box" role="alert">{parseError}</div>}
                 {duplicateWarning && <div className="warning-box" role="status">{duplicateWarning}</div>}
                 {assistantAnswer && (
@@ -2125,7 +2555,13 @@ function AppShell({
               {feedback.cast.map((role) => (
                 <article className="feedback-role-card" key={`${role.name}-${role.tone}`}>
                   <div className="feedback-role-identity">
-                    <NpcPortrait kind={role.kind} name={role.name} mood={role.mood} />
+                    <NpcPortrait
+                      kind={role.kind}
+                      name={role.name}
+                      mood={role.mood}
+                      rank={state.profile.rank}
+                      presentation={state.profile.presentation}
+                    />
                     <span className="npc-name">{role.name}</span>
                   </div>
                   <div className="feedback-role-dialogue">
@@ -2173,7 +2609,13 @@ function AppShell({
                   key={`${role.name}-${role.tone}`}
                 >
                   <div className="risk-role-identity">
-                    <NpcPortrait kind={role.kind} name={role.name} mood={role.mood} />
+                    <NpcPortrait
+                      kind={role.kind}
+                      name={role.name}
+                      mood={role.mood}
+                      rank={state.profile.rank}
+                      presentation={state.profile.presentation}
+                    />
                     <span className="npc-name">{role.name}</span>
                   </div>
                   <div className="risk-role-dialogue">
@@ -2290,13 +2732,23 @@ function AppShell({
       {promotionOpen && (
         <div className="modal-backdrop" role="presentation">
           <section className="modal compact promotion-modal" role="dialog" aria-modal="true" aria-labelledby="promotion-title">
-            <div className="promotion-seal">府</div>
+            <RankPortrait
+              rank={state.profile.rank}
+              presentation={state.profile.presentation}
+              label={`新官阶${currentRankName}人物立绘`}
+            />
             <span className="eyebrow">晋升诏书</span>
-            <h2 id="promotion-title">政绩合格，晋升知府</h2>
-            <p>当前身份、府库称谓和议事角色已经切换为知府阶段。</p>
-            <div className="unlock-list"><span>✓ 知府身份</span><span>✓ 府库称谓</span><span>✓ 州府议事角色</span></div>
+            <h2 id="promotion-title">政绩合格，晋升{currentRankName}</h2>
+            <p>人物服制、{currentRankConfig.residenceName}、{currentRankConfig.treasuryName}及议事角色已经同步切换。</p>
+            <div className="unlock-list">
+              <span>✓ {currentRankName}人物形象</span>
+              <span>✓ {currentRankConfig.rooms.hall.name}</span>
+              <span>✓ {currentRankConfig.rooms.treasury.name}</span>
+              <span>✓ {currentRankConfig.rooms.council.name}</span>
+              <span>✓ {currentRankConfig.rooms.works.name}</span>
+            </div>
             <button className="primary-button full" onClick={() => { setPromotionOpen(false); setTab("home"); }}>
-              返回升级后的府衙
+              返回升级后的{currentRankConfig.residenceName}
             </button>
           </section>
         </div>
@@ -2311,10 +2763,68 @@ function AppShell({
             </div>
             <div className="settings-list">
               <button onClick={() => { setSettingsOpen(false); onExitMode(); }}>切换账本</button>
-              {mode === "demo" && <button onClick={() => { onResetDemo(); setSettingsOpen(false); setTab("home"); }}>重新开始体验</button>}
-              {mode === "real" && <button onClick={() => { window.localStorage.removeItem(realStorageKey); setSettingsOpen(false); onExitMode(); }}>清空我的账本</button>}
+              {mode === "demo" && (
+                <button
+                  onClick={() => {
+                    onResetDemo();
+                    setPreviewRank("county");
+                    setPreviewRoom("hall");
+                    setPreviewFiscalState("stable");
+                    setSettingsOpen(false);
+                    setTab("home");
+                  }}
+                >
+                  重新开始体验
+                </button>
+              )}
+              {mode === "real" && (
+                <button
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setClearBookOpen(true);
+                  }}
+                >
+                  清空我的账本
+                </button>
+              )}
             </div>
             <p className="boundary-note">数据仅保存在此浏览器。清除浏览器数据或更换设备后将无法恢复。</p>
+          </section>
+        </div>
+      )}
+
+      {clearBookOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="modal compact"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-book-title"
+            data-testid="clear-book-confirmation"
+          >
+            <span className="eyebrow">危险操作 · 清空后不可恢复</span>
+            <h2 id="clear-book-title">确认清空整个本地账本？</h2>
+            <p>这会删除本机浏览器里的身份、预算、流水、议事记录、官阶和建设进度，不会影响演示账本。</p>
+            <div className="button-row">
+              <button
+                className="secondary-button"
+                autoFocus
+                onClick={() => setClearBookOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                className="danger-button"
+                data-testid="confirm-clear-book"
+                onClick={() => {
+                  window.localStorage.removeItem(realStorageKey);
+                  setClearBookOpen(false);
+                  onExitMode();
+                }}
+              >
+                确认清空
+              </button>
+            </div>
           </section>
         </div>
       )}

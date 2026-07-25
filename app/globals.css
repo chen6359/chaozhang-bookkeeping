@@ -4545,3 +4545,430 @@ textarea:focus {
     width: 100%;
   }
 }
+
+/* Five-rank world, semi-realistic characters, and four distinct room surfaces */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+.main-content {
+  background-attachment: local;
+  background-position: center top;
+  background-repeat: repeat, no-repeat;
+  transition: background-color 240ms ease;
+}
+
+.main-content.tab-home {
+  background-color: #f4ede1;
+  background-image:
+    linear-gradient(135deg, rgba(142, 63, 48, 0.045) 25%, transparent 25%),
+    radial-gradient(circle at 22% 0%, rgba(183, 93, 61, 0.12), transparent 34rem);
+  background-size: 44px 44px, auto;
+}
+
+.main-content.tab-treasury {
+  background-color: #eee8d9;
+  background-image:
+    linear-gradient(rgba(127, 95, 45, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(127, 95, 45, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 80% 0%, rgba(155, 123, 57, 0.18), transparent 32rem);
+  background-size: 32px 32px, 32px 32px, auto;
+}
+
+.main-content.tab-council {
+  background-color: #e7e5df;
+  background-image:
+    repeating-linear-gradient(135deg, rgba(44, 65, 68, 0.035) 0 2px, transparent 2px 18px),
+    radial-gradient(circle at 18% 0%, rgba(52, 87, 86, 0.17), transparent 34rem);
+}
+
+.main-content.tab-build {
+  background-color: #eee7da;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(105, 76, 40, 0.035) 0 1px, transparent 1px 24px),
+    radial-gradient(circle at 76% 0%, rgba(117, 87, 45, 0.17), transparent 34rem);
+}
+
+.room-scene-shell {
+  overflow: hidden;
+  border: 1px solid rgba(91, 66, 37, 0.15);
+  border-radius: var(--radius-lg);
+  background: #e7dac5;
+  box-shadow: var(--shadow-soft);
+}
+
+.room-scene-shell .world-scene {
+  min-height: 360px;
+}
+
+.world-scene-art {
+  background-repeat: no-repeat;
+  transform: none;
+}
+
+.world-scene.room-treasury .world-scene-shade {
+  background:
+    linear-gradient(180deg, rgba(30, 25, 15, 0.01) 24%, rgba(32, 25, 14, 0.72) 100%),
+    linear-gradient(90deg, rgba(105, 77, 28, 0.13), transparent 58%);
+}
+
+.world-scene.room-council .world-scene-shade {
+  background:
+    linear-gradient(180deg, rgba(11, 25, 28, 0.01) 24%, rgba(17, 27, 30, 0.75) 100%),
+    linear-gradient(90deg, rgba(22, 72, 75, 0.13), transparent 58%);
+}
+
+.world-scene.room-works .world-scene-shade {
+  background:
+    linear-gradient(180deg, rgba(32, 23, 12, 0.01) 24%, rgba(34, 25, 14, 0.74) 100%),
+    linear-gradient(90deg, rgba(116, 72, 26, 0.13), transparent 58%);
+}
+
+.rank-portrait {
+  display: block;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(126, 91, 49, 0.16);
+  border-radius: 20px;
+  background-color: #f7ead7;
+  background-repeat: no-repeat;
+  background-size: 500% 100%;
+  box-shadow: 0 10px 28px rgba(77, 48, 22, 0.1);
+}
+
+.rank-portrait.compact {
+  width: 58px;
+  height: 68px;
+  flex: 0 0 58px;
+  border-radius: 16px;
+}
+
+.nav-profile {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+}
+
+.nav-profile > .rank-portrait {
+  grid-row: auto;
+}
+
+.nav-profile > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.nav-profile > div strong,
+.nav-profile > div small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rank-card-with-portrait {
+  display: grid;
+  grid-template-columns: 126px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 18px;
+}
+
+.rank-card-with-portrait > .rank-portrait {
+  width: 126px;
+  min-height: 176px;
+  align-self: stretch;
+}
+
+.rank-card-with-portrait > div {
+  min-width: 0;
+}
+
+.npc-portrait {
+  background-repeat: no-repeat;
+  background-color: #fbf1e1;
+}
+
+.npc-portrait.compact {
+  background-color: #f8ead5;
+}
+
+.feedback-role-identity > .npc-portrait,
+.risk-role-identity > .npc-portrait {
+  background-repeat: no-repeat;
+  background-color: #fbf1e1;
+}
+
+.rank-world-visual {
+  grid-template-columns: minmax(118px, 0.34fr) minmax(0, 1fr);
+  background: #f7ead7;
+}
+
+.rank-world-card.current {
+  grid-column: auto;
+}
+
+.rank-world-card:last-child {
+  grid-column: 1 / -1;
+}
+
+.rank-world-heading > div {
+  min-width: 230px;
+}
+
+.rank-world-heading > div h2 {
+  font-size: clamp(26px, 3vw, 36px);
+  white-space: nowrap;
+}
+
+.rank-world-visual > .rank-portrait {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+  border: 0;
+  border-right: 1px solid rgba(104, 79, 48, 0.15);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.rank-world-card.current .rank-world-visual > .rank-portrait {
+  min-height: 300px;
+}
+
+.rank-world-scene {
+  background-repeat: no-repeat;
+}
+
+.rank-preview-button {
+  justify-self: start;
+  margin-top: 3px;
+}
+
+.world-preview-section {
+  overflow: hidden;
+  padding: 0;
+}
+
+.world-preview-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  border-bottom: 1px solid rgba(92, 70, 44, 0.13);
+  background: rgba(249, 244, 234, 0.78);
+  padding: 18px 22px;
+}
+
+.world-preview-controls fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid rgba(107, 79, 43, 0.15);
+  border-radius: 17px;
+  background: rgba(255, 253, 248, 0.76);
+  padding: 11px;
+}
+
+.world-preview-controls legend {
+  padding: 0 5px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.control-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.control-chip-row button {
+  min-height: 34px;
+  border: 1px solid rgba(104, 78, 46, 0.18);
+  border-radius: 999px;
+  background: #fffdf8;
+  color: var(--ink);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.control-chip-row button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fffaf0;
+}
+
+.world-preview-stage {
+  display: grid;
+  grid-template-columns: minmax(210px, 0.32fr) minmax(0, 1fr);
+  gap: 18px;
+  padding: 22px;
+}
+
+.preview-character-card,
+.preview-scene-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(103, 76, 43, 0.16);
+  border-radius: 22px;
+  background: rgba(255, 253, 248, 0.86);
+}
+
+.preview-character-card {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 14px;
+}
+
+.preview-character-card > .rank-portrait {
+  width: 100%;
+  aspect-ratio: 0.58;
+  margin-bottom: 6px;
+  border-radius: 15px;
+}
+
+.preview-character-card h3,
+.preview-character-card p {
+  margin: 0;
+}
+
+.preview-character-card p,
+.preview-character-card small {
+  color: var(--ink-soft);
+}
+
+.preview-scene-card .world-scene {
+  min-height: 430px;
+  border-radius: 0;
+}
+
+.preview-scene-note {
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid rgba(103, 76, 43, 0.14);
+  padding: 14px 16px;
+}
+
+.preview-scene-note span {
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.promotion-modal > .rank-portrait {
+  width: min(100%, 230px);
+  aspect-ratio: 0.62;
+  margin: 0 auto 8px;
+}
+
+@media (max-width: 900px) {
+  .world-preview-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .world-preview-stage {
+    grid-template-columns: minmax(170px, 0.36fr) minmax(0, 1fr);
+  }
+
+  .rank-world-card:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .main-content {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .room-scene-shell .world-scene {
+    min-height: 300px;
+  }
+
+  .rank-card-with-portrait {
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .rank-card-with-portrait > .rank-portrait {
+    width: 92px;
+    min-height: 148px;
+  }
+
+  .rank-world-visual,
+  .rank-world-card.current .rank-world-visual {
+    min-height: 250px;
+    grid-template-columns: 108px minmax(0, 1fr);
+  }
+
+  .rank-world-visual > .rank-portrait,
+  .rank-world-card.current .rank-world-visual > .rank-portrait {
+    min-height: 250px;
+  }
+
+  .rank-world-heading > div {
+    min-width: 0;
+  }
+
+  .rank-world-heading > div h2 {
+    white-space: normal;
+  }
+
+  .world-preview-controls {
+    padding: 14px;
+  }
+
+  .world-preview-stage {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .preview-character-card {
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-rows: auto auto auto 1fr;
+    align-items: start;
+  }
+
+  .preview-character-card > .rank-portrait {
+    grid-row: 1 / span 4;
+    width: 112px;
+    height: 190px;
+    aspect-ratio: auto;
+    margin: 0;
+  }
+
+  .preview-scene-card .world-scene {
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 360px) {
+  .rank-card-with-portrait {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .rank-card-with-portrait > .rank-portrait {
+    width: 78px;
+    min-height: 132px;
+  }
+
+  .rank-world-visual,
+  .rank-world-card.current .rank-world-visual {
+    grid-template-columns: 94px minmax(0, 1fr);
+  }
+
+  .preview-character-card {
+    grid-template-columns: 92px minmax(0, 1fr);
+  }
+
+  .preview-character-card > .rank-portrait {
+    width: 92px;
+    height: 170px;
+  }
+}

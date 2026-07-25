@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import ts from "typescript";
 import {
   calculateFinance,
   calculateRecoverySavings,
@@ -19,6 +20,15 @@ import {
   MAX_NEXT_CYCLE_REFERENCE,
   parseNextCycleReferenceAmount,
 } from "../lib/reference.ts";
+import {
+  getFiscalStateCopy,
+  getRankDisplayName,
+  getRoomConfig,
+  getSceneSprite,
+  rankConfigs,
+  rankKeys,
+  roomKeys,
+} from "../lib/world.ts";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -53,6 +63,109 @@ test("server-renders the Chaozhang prototype entry", async () => {
   assert.match(html, /体验完整演示/);
   assert.match(html, /不连接银行卡，也不会保管或划转真实资金/);
   assert.doesNotMatch(html, /Your site is taking shape|react-loading-skeleton/);
+});
+
+test("real and demo modes keep independent entry and persistence paths", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /type Mode = "real" \| "demo";/);
+  assert.match(source, /const realStorageKey = "chaozhang-real-v2";/);
+  assert.match(source, /const demoStorageKey = "chaozhang-demo-v3";/);
+  assert.match(
+    source,
+    /onClick=\{\(\) => onChoose\("real"\)\} data-testid="choose-real"/,
+  );
+  assert.match(
+    source,
+    /onClick=\{\(\) => onChoose\("demo"\)\} data-testid="choose-demo"/,
+  );
+  assert.match(
+    source,
+    /if \(selected === "demo"\)[\s\S]*?createDemoState\(\)[\s\S]*?else[\s\S]*?createBlankRealState\(\)/,
+    "the two mode choices should hydrate different initial states",
+  );
+  assert.match(
+    source,
+    /if \(mode === "real" && !state\.profile\.onboarded\)[\s\S]*?<Onboarding/,
+    "real mode should complete onboarding before entering the ledger",
+  );
+  assert.match(
+    source,
+    /onResetDemo=\{\(\) => \{[\s\S]*?createDemoState\(\)[\s\S]*?demoStorageKey/,
+    "demo mode should expose a deterministic reset path",
+  );
+});
+
+test("all four primary destinations have desktop, mobile, content, and room routes", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const tabs = [
+    ["home", "renderHome"],
+    ["treasury", "renderTreasury"],
+    ["council", "renderCouncil"],
+    ["build", "renderBuild"],
+  ];
+
+  assert.match(source, /type TabKey = "home" \| "treasury" \| "council" \| "build";/);
+  for (const [key, renderer] of tabs) {
+    assert.match(source, new RegExp(`\\{ key: "${key}", label:`));
+    assert.match(source, new RegExp(`tab === "${key}" && ${renderer}\\(\\)`));
+  }
+  assert.match(
+    source,
+    /data-testid=\{`nav-\$\{item\.key\}`\}/,
+    "desktop navigation should expose a stable route selector",
+  );
+  assert.match(
+    source,
+    /<nav className="mobile-nav"[\s\S]*?\{tabItems\.map/,
+    "mobile navigation should be generated from the same four-route contract",
+  );
+  assert.match(source, /onClick=\{\(\) => setTab\("home"\)\}>进入大堂/);
+  assert.match(source, /onClick=\{\(\) => setTab\("treasury"\)\}>查看库房/);
+  assert.match(source, /onClick=\{\(\) => setTab\("council"\)\}>前往议事厅/);
+  assert.match(
+    source,
+    /onClick=\{\(\) => openWorldPreview\(stage\.key, "works", fiscalState\)\}>查看营造院/,
+  );
+});
+
+test("every JSX button is wired to an action instead of being a visual placeholder", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const sourceFile = ts.createSourceFile(
+    "page.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const missingActions = [];
+  let buttonCount = 0;
+
+  const inspect = (node) => {
+    if (
+      (ts.isJsxElement(node) && node.openingElement.tagName.getText(sourceFile) === "button") ||
+      (ts.isJsxSelfClosingElement(node) && node.tagName.getText(sourceFile) === "button")
+    ) {
+      buttonCount += 1;
+      const opening = ts.isJsxElement(node) ? node.openingElement : node;
+      const attributes = opening.attributes.properties
+        .filter(ts.isJsxAttribute)
+        .map((attribute) => attribute.name.getText(sourceFile));
+      if (!attributes.includes("onClick") && !attributes.includes("type")) {
+        const { line } = sourceFile.getLineAndCharacterOfPosition(opening.getStart(sourceFile));
+        missingActions.push(line + 1);
+      }
+    }
+    ts.forEachChild(node, inspect);
+  };
+  inspect(sourceFile);
+
+  assert.ok(buttonCount >= 50, `expected the complete interactive surface, found ${buttonCount} buttons`);
+  assert.deepEqual(
+    missingActions,
+    [],
+    `button elements without an action were found on lines ${missingActions.join(", ")}`,
+  );
 });
 
 test("entry and onboarding screens remove the desktop offset on phone widths", async () => {
@@ -117,7 +230,11 @@ test("next-cycle category references are real persisted drafts", async () => {
   assert.match(source, /data-testid="save-next-cycle-reference"/);
   assert.match(source, /data-testid="delete-next-cycle-reference"/);
   assert.match(source, /仅保存为下周期草案，不改变本期额度、风险或/);
-  assert.match(source, /请先在最近流水中为待分类支出补充分类/);
+  assert.match(
+    source,
+    /normalizeExpenseCategory\(item\.category\) === "其他"[\s\S]*?setTab\("treasury"\);[\s\S]*?editItem\(firstUnclassified\);/,
+    "uncategorized spending should open the real ledger editor",
+  );
   assert.doesNotMatch(
     source,
     /saveRiskDecision\(`设置下周期\$\{leadingCategory\.key\}参考额度`\)/,
@@ -148,7 +265,8 @@ test("risk page renders actual role cards instead of a role-design explanation",
   assert.match(source, /钱粮小吏/);
   assert.match(source, /县丞/);
   assert.match(source, /掌灯知己/);
-  assert.doesNotMatch(source, /御前太监|户部尚书|皇后/);
+  assert.match(source, /rankKey === "emperor"[\s\S]*?comic: "御前太监"[\s\S]*?advisor: "丞相"/);
+  assert.match(source, /companion: partnerIsMale \? "皇夫" : "皇后"/);
   assert.doesNotMatch(source, /<NpcStage cast=\{currentRiskCast\}/);
   assert.match(
     source,
@@ -167,83 +285,104 @@ test("risk page renders actual role cards instead of a role-design explanation",
   );
 });
 
-test("high-fidelity scene and character assets are wired into the UI", async () => {
+test("all five rank worlds and both player portrait sheets are real assets", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-  const sceneAssets = [
-    "chaozhang-yamen-states-v2.png",
-    "chaozhang-prefecture-states.png",
-    "chaozhang-governor-states.png",
-    "chaozhang-rank-progression.png",
-  ];
+  const sceneAssets = rankConfigs.map((rank) => rank.sceneAsset.slice(1));
+  const portraitAssets = [
+    ...new Set(
+      rankConfigs.flatMap((rank) => Object.values(rank.portraitAssets)),
+    ),
+  ].map((asset) => asset.slice(1));
 
-  assert.match(source, /className=\{`world-scene/);
-  assert.match(source, /npc-portrait/);
-  assert.doesNotMatch(
-    styles,
-    /url\("\/chaozhang-yamen-states\.png"\)/,
-    "the first-generation county scene should no longer drive the live UI",
-  );
-  for (const assetName of sceneAssets) {
-    assert.match(styles, new RegExp(assetName.replaceAll(".", "\\.")));
+  assert.deepEqual(rankKeys, [
+    "county",
+    "prefecture",
+    "governor",
+    "regent",
+    "emperor",
+  ]);
+  assert.equal(rankConfigs.length, 5);
+  for (const assetName of [...sceneAssets, ...portraitAssets]) {
     const asset = await readFile(new URL(`../public/${assetName}`, import.meta.url));
-    assert.ok(asset.byteLength > 1_000_000, `${assetName} should be a full scene asset`);
+    assert.ok(asset.byteLength > 400_000, `${assetName} should be a full optimized sprite asset`);
   }
-  assert.match(source, /src=\{`\/npc\/\$\{kind\}-\$\{mood\}\.png`\}/);
+  assert.match(source, /function RankPortrait\(/);
+  assert.match(source, /const portrait = getRankPortraitAsset\(rank, gender\);/);
   assert.match(
-    styles,
-    /\.npc-portrait > img\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*contain;/s,
+    source,
+    /backgroundPosition: `\$\{portrait\.index \* 25\}% \$\{compact \? "14%" : "center"\}`/,
   );
-  assert.doesNotMatch(styles, /chaozhang-npc-(?:trio|success|warning|alarm|council|recovery)\.png/);
 });
 
-test("rank selects the matching live scene theme", async () => {
+test("five ranks expose four rooms across all three persistent fiscal states", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const fiscalStates = ["stable", "strained", "deficit"];
+  const spriteIds = new Set();
 
-  assert.match(
-    source,
-    /const getRankTheme = \(rank: string\): RankTheme =>\s*rank === "巡抚" \? "governor" : rank === "知府" \? "prefecture" : "county";/,
-  );
-  assert.match(source, /const rankTheme = getRankTheme\(rank\);/);
-  assert.match(
-    source,
-    /className=\{`world-scene rank-theme-\$\{rankTheme\} \$\{fiscalState\} \$\{recovering \? "recovering" : ""\}`\}/,
-    "SceneWireframe should combine rank theme and fiscal state",
-  );
+  assert.deepEqual(roomKeys, ["hall", "treasury", "council", "works"]);
+  for (const rank of rankConfigs) {
+    const roomNames = new Set();
+    for (const room of roomKeys) {
+      const config = getRoomConfig(rank.key, room);
+      assert.equal(config.key, room);
+      assert.ok(config.name.length >= 3);
+      assert.ok(config.navigationLabel.length >= 4);
+      roomNames.add(config.name);
+      for (const fiscalState of fiscalStates) {
+        const sprite = getSceneSprite(rank.key, room, fiscalState);
+        assert.equal(sprite.src, rank.sceneAsset);
+        assert.equal(sprite.backgroundSize, "300% 400%");
+        assert.ok(!spriteIds.has(sprite.id), `${sprite.id} should be unique`);
+        spriteIds.add(sprite.id);
+      }
+    }
+    assert.equal(roomNames.size, 4, `${rank.key} should have four distinct rooms`);
+  }
+  assert.equal(spriteIds.size, 5 * 4 * 3);
+  assert.match(source, /const sceneSprite = getSceneSprite\(rank, room, fiscalState\);/);
+  assert.match(source, /data-room=\{room\}/);
+  assert.match(source, /data-rank=\{rankConfig\.key\}/);
+  assert.match(source, /data-fiscal-state=\{fiscalState\}/);
+  assert.match(source, /backgroundImage: `url\("\$\{sceneSprite\.src\}"\)`/);
+  assert.match(source, /backgroundSize: sceneSprite\.backgroundSize/);
+  assert.match(source, /backgroundPosition: sceneSprite\.backgroundPosition/);
 });
 
 test("build page combines rank characters, offices, and real room navigation", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
-  assert.match(source, />仕途图鉴</);
+  assert.match(source, />仕途与官署图鉴</);
+  assert.match(source, /\{rankConfigs\.map\(\(stage, index\) => \{/);
   assert.match(source, /className=\{`rank-world-card \$\{relation\}`\}/);
-  assert.match(source, /className=\{`rank-world-avatar rank-index-\$\{index\}`\}/);
-  assert.match(
-    source,
-    /className=\{`rank-world-scene rank-theme-\$\{stage\.theme\} \$\{visualState\}`\}/,
-  );
+  assert.match(source, /<RankPortrait[\s\S]*?rank=\{stage\.key\}/);
+  assert.match(source, /getSceneSprite\(stage\.key, "hall", visualState\)/);
   assert.match(source, /className="rank-room-nav"/);
   assert.match(source, /onClick=\{\(\) => setTab\("home"\)\}>进入大堂/);
   assert.match(source, /onClick=\{\(\) => setTab\("treasury"\)\}>查看库房/);
   assert.match(source, /onClick=\{\(\) => setTab\("council"\)\}>前往议事厅/);
-  assert.match(source, /onClick=\{\(\) => setTab\("build"\)\}>留在营造院/);
+  assert.match(source, /openWorldPreview\(stage\.key, "works", fiscalState\)/);
+  assert.match(source, /data-testid=\{`preview-rank-\$\{stage\.key\}`\}/);
+  assert.match(source, /data-testid=\{`world-rank-\$\{rank\.key\}`\}/);
+  assert.match(source, /data-testid=\{`world-room-\$\{room\}`\}/);
+  assert.match(source, /data-testid=\{`world-fiscal-\$\{value\}`\}/);
+  assert.match(source, /rank=\{previewRank\}[\s\S]*?room=\{previewRoom\}[\s\S]*?fiscalState=\{previewFiscalState\}/);
   assert.doesNotMatch(source, />场景库<|>官阶录<|className="scene-library"/);
 });
 
-test("rank world CSS provides three office themes and collapses to one card column", async () => {
+test("rank world CSS supports sprite portraits and a phone-safe single-column preview", async () => {
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.match(
     styles,
-    /\.rank-world-scene\.rank-theme-county\s*\{[^}]*background-image:\s*url\("\/chaozhang-yamen-states-v2\.png"\);/s,
+    /\.rank-portrait\s*\{[^}]*background-repeat:\s*no-repeat;[^}]*background-size:\s*500% 100%;/s,
   );
   assert.match(
     styles,
-    /\.rank-world-scene\.rank-theme-prefecture\s*\{[^}]*background-image:\s*url\("\/chaozhang-prefecture-states\.png"\);/s,
+    /\.world-scene-art\s*\{[^}]*background-repeat:\s*no-repeat;[^}]*transform:\s*none;/s,
   );
   assert.match(
     styles,
-    /\.rank-world-scene\.rank-theme-governor\s*\{[^}]*background-image:\s*url\("\/chaozhang-governor-states\.png"\);/s,
+    /\.world-preview-stage\s*\{[^}]*grid-template-columns:\s*minmax\(210px,\s*0\.32fr\) minmax\(0,\s*1fr\);/s,
   );
   assert.match(
     styles,
@@ -252,23 +391,31 @@ test("rank world CSS provides three office themes and collapses to one card colu
   );
   assert.match(
     styles,
-    /@media \(max-width: 640px\)\s*\{[\s\S]*?\.rank-room-nav\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,
-    "room actions should remain usable on phone widths",
+    /@media \(max-width: 640px\)\s*\{[\s\S]*?\.world-preview-stage\s*\{[^}]*grid-template-columns:\s*1fr;/,
+    "the character and room preview should stack on phone widths",
   );
 });
 
-test("character portraits switch expressions and actions with product events", async () => {
+test("rank-aware NPC sprites switch role, rank, and event mood", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-  const moods = ["neutral", "success", "warning", "alarm", "council", "recovery"];
-  const roles = ["comic", "advisor", "companion"];
+  const spriteAssets = [
+    "npc-comic-ranks.jpg",
+    "npc-advisor-ranks.jpg",
+    "npc-companion-female-ranks.jpg",
+    "npc-companion-male-ranks.jpg",
+  ];
 
   assert.match(source, /type NpcMood\s*=/);
   assert.match(source, /data-mood=\{mood\}/);
+  assert.match(source, /data-rank=\{getRankConfig\(rank\)\.key\}/);
   assert.match(source, /riskLevel === "deficit" \? "alarm" : "warning"/);
   assert.match(source, /mood=\{role\.mood\}/);
   assert.match(source, /mood="council"/);
   assert.match(source, /didRecover \|\| recoveryCompleted \? "recovery" : "success"/);
+  assert.match(source, /const rankIndex = getRankIndex\(rank\);/);
+  assert.match(source, /backgroundSize: "500% 300%"/);
+  assert.match(source, /backgroundPosition: `\$\{rankIndex \* 25\}% \$\{moodRow \* 50\}%`/);
   assert.match(source, /className="feedback-role-identity"/);
   assert.match(source, /className="feedback-role-dialogue"/);
   assert.match(
@@ -280,16 +427,9 @@ test("character portraits switch expressions and actions with product events", a
     /\.feedback-role-identity > \.npc-portrait\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*border-radius:\s*0;/s,
   );
 
-  for (const role of roles) {
-    for (const mood of moods) {
-      const asset = await readFile(
-        new URL(`../public/npc/${role}-${mood}.png`, import.meta.url),
-      );
-      assert.ok(
-        asset.byteLength > 100_000,
-        `${role}-${mood} should be a real standalone portrait asset`,
-      );
-    }
+  for (const assetName of spriteAssets) {
+    const asset = await readFile(new URL(`../public/${assetName}`, import.meta.url));
+    assert.ok(asset.byteLength > 400_000, `${assetName} should be a full optimized role sprite`);
   }
 });
 
@@ -302,14 +442,50 @@ test("open tabs synchronize persisted ledger and treasury changes", async () => 
   assert.match(source, /window\.removeEventListener\("storage", syncLedgerAcrossTabs\)/);
 });
 
+test("clearing a real ledger requires an explicit destructive confirmation", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /const \[clearBookOpen, setClearBookOpen\] = useState\(false\);/);
+  assert.match(
+    source,
+    /mode === "real" && \([\s\S]*?setSettingsOpen\(false\);[\s\S]*?setClearBookOpen\(true\);[\s\S]*?>\s*清空我的账本/,
+    "the settings action should open confirmation instead of deleting immediately",
+  );
+  assert.match(source, /\{clearBookOpen && \(/);
+  assert.match(source, /data-testid="clear-book-confirmation"/);
+  assert.match(source, /onClick=\{\(\) => setClearBookOpen\(false\)\}[\s\S]*?>\s*取消/);
+  assert.match(source, /data-testid="confirm-clear-book"/);
+  assert.match(
+    source,
+    /data-testid="confirm-clear-book"[\s\S]*?window\.localStorage\.removeItem\(realStorageKey\);[\s\S]*?setClearBookOpen\(false\);[\s\S]*?onExitMode\(\);/,
+  );
+});
+
 test("fiscal scene uses clear customer copy and cannot leave a stretched white footer", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.doesNotMatch(source, /建设暂停/);
-  assert.match(source, /本周期消费预算已超支，扩建停工、部分陈设收起/);
-  assert.match(source, /\$\{vocabulary\.treasury\}账面为负，陈设典卖、庭院荒废/);
-  assert.match(source, /灯火齐明、花木繁盛，官署与营造项目照常推进/);
+  assert.match(source, /const stateCopy = getFiscalStateCopy\(rank, fiscalState, room\);/);
+  for (const rank of rankKeys) {
+    for (const room of roomKeys) {
+      const stable = getFiscalStateCopy(rank, "stable", room);
+      const strained = getFiscalStateCopy(rank, "strained", room);
+      const deficit = getFiscalStateCopy(rank, "deficit", room);
+      assert.notEqual(stable.description, strained.description);
+      assert.notEqual(strained.description, deficit.description);
+      assert.match(
+        stable.description,
+        /完整|丰足|繁盛|充足|充裕|齐全|全数|有序/,
+        `${rank}.${room}.stable should visibly communicate abundance`,
+      );
+      assert.match(
+        deficit.description,
+        /破损|撤空|枯败|空架|封存|缩减|停摆|撤走|只保留/,
+        `${rank}.${room}.deficit should visibly communicate loss`,
+      );
+    }
+  }
   assert.match(styles, /\.scene-card\s*\{[^}]*min-height:\s*0;/s);
   assert.match(
     styles,
@@ -397,7 +573,7 @@ test("a savings entry is not mistaken for a savings-progress question", () => {
   );
 });
 
-test("rank vocabulary keeps county, prefecture, province, and palace stages distinct", () => {
+test("rank vocabulary keeps all five career stages distinct", () => {
   assert.deepEqual(getCourtVocabulary("从九品县令"), {
     treasury: "县库",
     residence: "县衙",
@@ -406,10 +582,13 @@ test("rank vocabulary keeps county, prefecture, province, and palace stages dist
   });
   assert.equal(getCourtVocabulary("知府").treasury, "府库");
   assert.equal(getCourtVocabulary("巡抚").treasury, "藩库");
+  assert.equal(getCourtVocabulary("监国").treasury, "内库");
   assert.equal(getCourtVocabulary("皇帝").treasury, "国库");
+  assert.equal(getRankDisplayName("emperor", "female"), "女帝");
+  assert.equal(getRankDisplayName("emperor", "male"), "皇帝");
 });
 
-test("standalone NPC panels use one uncropped 2:3 stage at desktop and mobile widths", async () => {
+test("NPC sprite panels keep a full portrait stage at desktop and mobile widths", async () => {
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.match(
@@ -422,7 +601,7 @@ test("standalone NPC panels use one uncropped 2:3 stage at desktop and mobile wi
   );
   assert.match(
     styles,
-    /\.risk-role-identity > \.npc-portrait > img\s*\{[^}]*object-fit:\s*fill;[^}]*transform:\s*none;/s,
+    /\.feedback-role-identity > \.npc-portrait,[\s\S]*?\.risk-role-identity > \.npc-portrait\s*\{[^}]*background-repeat:\s*no-repeat;[^}]*background-color:\s*#fbf1e1;/s,
   );
   assert.match(
     styles,
