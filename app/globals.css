@@ -4972,3 +4972,599 @@ textarea:focus {
     height: 170px;
   }
 }
+
+/* Character presentation V3: every portrait is an independent transparent asset.
+   Portraits are intentionally unframed; the surrounding content card or speech
+   bubble owns the visual boundary. */
+.rank-portrait,
+.npc-portrait {
+  isolation: isolate;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: none !important;
+  box-shadow: none;
+}
+
+.rank-portrait::after,
+.npc-portrait::after {
+  position: absolute;
+  z-index: 0;
+  right: 14%;
+  bottom: 1%;
+  left: 14%;
+  height: 7%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(60, 40, 21, 0.2), transparent 70%);
+  filter: blur(5px);
+  content: "";
+  pointer-events: none;
+}
+
+.rank-portrait > img,
+.npc-portrait > img {
+  display: block;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 10px 8px rgba(61, 40, 23, 0.14));
+}
+
+.rank-portrait.compact,
+.npc-portrait.compact {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.rank-portrait.compact > img,
+.npc-portrait.compact > img {
+  object-fit: contain;
+  object-position: center bottom;
+  transform: none;
+  transform-origin: center bottom;
+}
+
+.nav-profile > .rank-portrait {
+  align-self: end;
+}
+
+.rank-card-with-portrait {
+  grid-template-columns: clamp(118px, 18vw, 150px) minmax(0, 1fr);
+  align-items: center;
+  overflow: visible;
+}
+
+.rank-card-with-portrait > .rank-portrait {
+  width: 100%;
+  height: 190px;
+  min-height: 0;
+  align-self: end;
+}
+
+.rank-world-visual {
+  grid-template-columns: minmax(132px, 0.34fr) minmax(0, 1fr);
+  overflow: visible;
+}
+
+.rank-world-visual > .rank-portrait,
+.rank-world-card.current .rank-world-visual > .rank-portrait {
+  width: 100%;
+  height: 300px;
+  min-height: 0;
+  align-self: end;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 12px 4px 0;
+}
+
+.npc-slot,
+.feedback-role-identity,
+.risk-role-identity {
+  overflow: visible;
+  background: transparent;
+}
+
+.npc-slot .npc-portrait {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Feedback cards: the person stands openly beside their own speech bubble. */
+.feedback-role-card {
+  grid-template-columns: 168px minmax(0, 1fr);
+  min-height: 252px;
+  align-items: stretch;
+  gap: 14px;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.feedback-role-identity {
+  width: 168px;
+  height: 252px;
+  aspect-ratio: auto;
+  align-self: end;
+}
+
+.feedback-role-identity > .npc-portrait {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.feedback-role-identity > .npc-portrait > img {
+  object-fit: contain;
+  object-position: center bottom;
+  transform: none;
+}
+
+.feedback-role-identity > .npc-name,
+.risk-role-identity > .npc-name {
+  z-index: 2;
+  box-shadow: 0 7px 18px rgba(46, 31, 20, 0.14);
+}
+
+.feedback-role-dialogue {
+  position: relative;
+  align-content: center;
+  align-self: stretch;
+  border: 1px solid rgba(142, 108, 67, 0.22);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 0 50%, rgba(195, 154, 74, 0.1), transparent 9rem),
+    rgba(255, 253, 248, 0.94);
+  box-shadow: 0 10px 28px rgba(84, 58, 31, 0.07);
+  padding: 22px;
+}
+
+.feedback-role-dialogue::before {
+  position: absolute;
+  top: 50%;
+  left: -7px;
+  width: 12px;
+  height: 12px;
+  transform: translateY(-50%) rotate(-45deg);
+  border-top: 1px solid rgba(142, 108, 67, 0.22);
+  border-left: 1px solid rgba(142, 108, 67, 0.22);
+  background: #fffdf8;
+  content: "";
+}
+
+/* Risk ensemble: no portrait tiles; each role remains paired with its line. */
+.risk-role-card,
+.risk-role-comic,
+.risk-role-advisor,
+.risk-role-companion {
+  grid-template-rows: 252px minmax(0, 1fr);
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.risk-role-identity {
+  width: 100%;
+  height: 252px;
+  min-height: 0;
+  aspect-ratio: auto;
+  align-self: end;
+}
+
+.risk-role-identity > .npc-portrait {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.risk-role-identity > .npc-portrait > img {
+  object-fit: contain;
+  object-position: center bottom;
+  transform: none;
+}
+
+.risk-role-dialogue {
+  min-width: 0;
+  margin-top: 12px;
+  border: 1px solid rgba(142, 108, 67, 0.22);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.94);
+  box-shadow: 0 9px 24px rgba(84, 58, 31, 0.06);
+  padding: 17px;
+}
+
+.risk-role-dialogue::before {
+  border-color: rgba(142, 108, 67, 0.22);
+  background: #fffdf8;
+}
+
+/* The fiscal preview portrait is presented as a cutout, not a second card. */
+.preview-character-card {
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 10px 8px;
+}
+
+.preview-character-card > .rank-portrait {
+  width: 100%;
+  height: 360px;
+  aspect-ratio: auto;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Promotion is an imperial/prefectural edict, never a character portrait. */
+.promotion-modal {
+  width: min(100%, 620px);
+  overflow-x: hidden;
+  border: 1px solid rgba(130, 88, 40, 0.22);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(195, 154, 74, 0.18), transparent 22rem),
+    #fffaf0;
+}
+
+.promotion-modal > .rank-portrait {
+  display: none;
+}
+
+.promotion-edict {
+  display: grid;
+  position: relative;
+  width: min(100% - 18px, 480px);
+  margin: 18px auto 28px;
+  place-items: center;
+  gap: 10px;
+  border: 1px solid rgba(132, 84, 34, 0.28);
+  border-right-width: 9px;
+  border-left-width: 9px;
+  border-radius: 7px;
+  background:
+    linear-gradient(90deg, rgba(115, 69, 28, 0.09), transparent 12%, transparent 88%, rgba(115, 69, 28, 0.09)),
+    repeating-linear-gradient(0deg, rgba(115, 69, 28, 0.025) 0 1px, transparent 1px 7px),
+    #f7e7bd;
+  box-shadow:
+    inset 0 0 36px rgba(106, 66, 25, 0.12),
+    0 18px 42px rgba(85, 51, 22, 0.14);
+  padding: 38px 42px 34px;
+  color: #372619;
+  text-align: center;
+}
+
+.promotion-edict::before,
+.promotion-edict::after {
+  position: absolute;
+  z-index: 2;
+  right: -18px;
+  left: -18px;
+  height: 16px;
+  border: 1px solid rgba(94, 55, 22, 0.45);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, #9f6b33, #5d371b 54%, #a06d36);
+  box-shadow: 0 5px 12px rgba(58, 34, 17, 0.24);
+  content: "";
+}
+
+.promotion-edict::before {
+  top: -8px;
+}
+
+.promotion-edict::after {
+  bottom: -8px;
+}
+
+.edict-kicker,
+.promotion-edict > .eyebrow {
+  color: var(--accent-deep);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.24em;
+}
+
+.promotion-edict-heading {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.edict-opening {
+  color: #79502d;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.32em;
+}
+
+.edict-title,
+.promotion-edict > h2 {
+  margin: 0;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: clamp(28px, 5vw, 40px);
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+}
+
+.edict-copy,
+.promotion-edict > p {
+  max-width: 34em;
+  margin: 0;
+  color: #5d4937;
+  line-height: 1.75;
+}
+
+.edict-rank {
+  display: inline;
+  margin: 0 0.12em;
+  color: var(--accent-deep);
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  font-size: 1.16em;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.promotion-edict-rooms {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 6px 0 0;
+}
+
+.promotion-edict-rooms > div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(120, 76, 31, 0.18);
+  background: rgba(255, 250, 231, 0.52);
+  padding: 8px 10px;
+}
+
+.promotion-edict-rooms dt {
+  color: #9a3f33;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.promotion-edict-rooms dd {
+  margin: 0;
+  color: #4c3422;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.promotion-edict-footer {
+  display: flex;
+  width: 100%;
+  min-height: 72px;
+  align-items: flex-end;
+  justify-content: center;
+  color: #6d4326;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+}
+
+.edict-seal,
+.promotion-edict .promotion-seal {
+  display: grid;
+  position: absolute;
+  z-index: 3;
+  right: 24px;
+  bottom: 24px;
+  width: 70px;
+  height: 70px;
+  margin: 0;
+  place-items: center;
+  transform: rotate(-7deg);
+  border: 4px double rgba(157, 47, 38, 0.84);
+  border-radius: 10px;
+  background: rgba(173, 55, 43, 0.08);
+  color: rgba(157, 47, 38, 0.9);
+  box-shadow: none;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+@media (max-width: 640px) {
+  .rank-card-with-portrait {
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .rank-card-with-portrait > .rank-portrait {
+    width: 96px;
+    height: 154px;
+    min-height: 0;
+  }
+
+  .rank-world-visual,
+  .rank-world-card.current .rank-world-visual {
+    grid-template-columns: 112px minmax(0, 1fr);
+  }
+
+  .rank-world-visual > .rank-portrait,
+  .rank-world-card.current .rank-world-visual > .rank-portrait {
+    height: 238px;
+    min-height: 0;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .feedback-role-card {
+    grid-template-columns: 118px minmax(0, 1fr);
+    min-height: 194px;
+    gap: 8px;
+  }
+
+  .feedback-role-identity {
+    width: 118px;
+    height: 194px;
+  }
+
+  .feedback-role-dialogue {
+    padding: 14px;
+  }
+
+  .risk-role-card,
+  .risk-role-comic,
+  .risk-role-advisor,
+  .risk-role-companion {
+    display: flex;
+    min-height: 194px;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .risk-role-identity {
+    width: 118px;
+    height: 194px;
+    min-height: 194px;
+    flex: 0 0 118px;
+  }
+
+  .risk-role-dialogue {
+    display: grid;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    margin-top: 0;
+    border: 1px solid rgba(142, 108, 67, 0.22);
+    padding: 13px;
+  }
+
+  .risk-role-dialogue::before {
+    top: 50%;
+    left: -7px;
+    transform: translateY(-50%) rotate(-45deg);
+  }
+
+  .preview-character-card {
+    grid-template-columns: 116px minmax(0, 1fr);
+    column-gap: 10px;
+    padding: 4px;
+  }
+
+  .preview-character-card > .rank-portrait {
+    width: 116px;
+    height: 194px;
+  }
+
+  .promotion-edict {
+    width: calc(100% - 14px);
+    margin-top: 14px;
+    padding: 34px 28px 32px;
+  }
+
+  .edict-seal,
+  .promotion-edict .promotion-seal {
+    right: 16px;
+    bottom: 18px;
+    width: 58px;
+    height: 58px;
+    font-size: 17px;
+  }
+}
+
+@media (max-width: 360px) {
+  .rank-card-with-portrait {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .rank-card-with-portrait > .rank-portrait {
+    width: 82px;
+    height: 138px;
+  }
+
+  .rank-world-visual,
+  .rank-world-card.current .rank-world-visual {
+    grid-template-columns: 94px minmax(0, 1fr);
+  }
+
+  .feedback-role-card {
+    grid-template-columns: 96px minmax(0, 1fr);
+    min-height: 176px;
+  }
+
+  .feedback-role-identity {
+    width: 96px;
+    height: 176px;
+  }
+
+  .feedback-role-identity > .npc-name,
+  .risk-role-identity > .npc-name {
+    max-width: 92px;
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+
+  .feedback-role-dialogue,
+  .risk-role-dialogue {
+    padding: 11px;
+  }
+
+  .feedback-role-dialogue > p,
+  .risk-role-dialogue > p {
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .risk-role-card,
+  .risk-role-comic,
+  .risk-role-advisor,
+  .risk-role-companion {
+    min-height: 176px;
+  }
+
+  .risk-role-identity {
+    width: 96px;
+    height: 176px;
+    min-height: 176px;
+    flex-basis: 96px;
+  }
+
+  .preview-character-card {
+    grid-template-columns: 94px minmax(0, 1fr);
+  }
+
+  .preview-character-card > .rank-portrait {
+    width: 94px;
+    height: 174px;
+  }
+
+  .promotion-edict {
+    padding: 32px 20px 30px;
+  }
+
+  .edict-title,
+  .promotion-edict > h2 {
+    font-size: 27px;
+  }
+}

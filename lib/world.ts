@@ -46,8 +46,10 @@ export type RankConfig = {
   attire: string;
   poses: Record<FiscalStateKey, string>;
   sceneAsset: string;
-  portraitAssets: Record<CharacterGender, string>;
-  portraitIndex: number;
+  portraitAssets: Record<
+    CharacterGender,
+    Record<FiscalStateKey, string>
+  >;
   rooms: Record<RoomKey, RoomConfig>;
 };
 
@@ -60,10 +62,20 @@ export type SceneSprite = {
   backgroundPosition: string;
 };
 
-const portraitAssets: Record<CharacterGender, string> = {
-  male: "/ranks-male.jpg",
-  female: "/ranks-female.jpg",
-};
+const createPortraitAssets = (
+  rank: RankKey,
+): RankConfig["portraitAssets"] => ({
+  male: {
+    stable: `/characters/player/male/${rank}/stable.webp`,
+    strained: `/characters/player/male/${rank}/strained.webp`,
+    deficit: `/characters/player/male/${rank}/deficit.webp`,
+  },
+  female: {
+    stable: `/characters/player/female/${rank}/stable.webp`,
+    strained: `/characters/player/female/${rank}/strained.webp`,
+    deficit: `/characters/player/female/${rank}/deficit.webp`,
+  },
+});
 
 export const roomConfigs: Record<
   RoomKey,
@@ -112,8 +124,7 @@ export const rankConfigs: readonly RankConfig[] = [
       deficit: "收紧袖口并抱住修缮清单，神情坚定而非沮丧。",
     },
     sceneAsset: "/world-county-rooms.jpg",
-    portraitAssets,
-    portraitIndex: 0,
+    portraitAssets: createPortraitAssets("county"),
     rooms: {
       hall: {
         ...roomConfigs.hall,
@@ -161,8 +172,7 @@ export const rankConfigs: readonly RankConfig[] = [
       deficit: "手持封存清单与修缮令，在空出的陈设位前主持止损。",
     },
     sceneAsset: "/world-prefecture-rooms.jpg",
-    portraitAssets,
-    portraitIndex: 1,
+    portraitAssets: createPortraitAssets("prefecture"),
     rooms: {
       hall: {
         ...roomConfigs.hall,
@@ -210,8 +220,7 @@ export const rankConfigs: readonly RankConfig[] = [
       deficit: "一手执修复次序，一手按住撤项图，体现承担而非失势。",
     },
     sceneAsset: "/world-governor-rooms.jpg",
-    portraitAssets,
-    portraitIndex: 2,
+    portraitAssets: createPortraitAssets("governor"),
     rooms: {
       hall: {
         ...roomConfigs.hall,
@@ -259,8 +268,7 @@ export const rankConfigs: readonly RankConfig[] = [
       deficit: "站立封存非必要仪仗，亲自签署修缮先后令。",
     },
     sceneAsset: "/world-regent-rooms.jpg",
-    portraitAssets,
-    portraitIndex: 3,
+    portraitAssets: createPortraitAssets("regent"),
     rooms: {
       hall: {
         ...roomConfigs.hall,
@@ -308,8 +316,7 @@ export const rankConfigs: readonly RankConfig[] = [
       deficit: "立于清空后的御案旁签署裁撤与修复令，保持掌控感。",
     },
     sceneAsset: "/world-emperor-rooms.jpg",
-    portraitAssets,
-    portraitIndex: 4,
+    portraitAssets: createPortraitAssets("emperor"),
     rooms: {
       hall: {
         ...roomConfigs.hall,
@@ -398,11 +405,12 @@ export function getRankDisplayName(
 export function getRankPortraitAsset(
   rank: string | RankKey,
   gender: CharacterGender,
-): { src: string; index: number } {
+  fiscalState: FiscalStateKey = "stable",
+): { src: string; fiscalState: FiscalStateKey } {
   const config = getRankConfig(rank);
   return {
-    src: config.portraitAssets[gender],
-    index: config.portraitIndex,
+    src: config.portraitAssets[gender][fiscalState],
+    fiscalState,
   };
 }
 

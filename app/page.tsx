@@ -20,6 +20,7 @@ import {
   MAX_NEXT_CYCLE_REFERENCE,
   parseNextCycleReferenceAmount,
 } from "../lib/reference";
+import { getNpcPortraitAsset } from "../lib/characters";
 import {
   getFiscalStateCopy,
   getNextRank,
@@ -339,28 +340,30 @@ const getRankForMerit = (
 function RankPortrait({
   rank,
   presentation,
+  fiscalState = "stable",
   compact = false,
   label,
 }: {
   rank: string;
   presentation: string;
+  fiscalState?: FiscalState;
   compact?: boolean;
   label?: string;
 }) {
   const gender = getCharacterGender(presentation);
-  const portrait = getRankPortraitAsset(rank, gender);
+  const portrait = getRankPortraitAsset(rank, gender, fiscalState);
   const displayName = getRankDisplayName(rank, gender);
+  const accessibleLabel = label ?? `${displayName}人物立绘`;
   return (
     <span
       className={`rank-portrait ${compact ? "compact" : ""}`}
+      data-fiscal-state={portrait.fiscalState}
       role="img"
-      aria-label={label ?? `${displayName}人物立绘`}
-      style={{
-        backgroundImage: `url("${portrait.src}")`,
-        backgroundSize: compact ? "500% 225%" : "500% 100%",
-        backgroundPosition: `${portrait.index * 25}% ${compact ? "14%" : "center"}`,
-      }}
-    />
+      aria-label={accessibleLabel}
+    >
+      <img src={portrait.src} alt="" draggable={false} />
+      <span className="sr-only">{accessibleLabel}</span>
+    </span>
   );
 }
 
@@ -379,36 +382,79 @@ function NpcPortrait({
   compact?: boolean;
   mood?: NpcMood;
 }) {
-  const rankIndex = getRankIndex(rank);
-  const moodRow =
-    mood === "warning" || mood === "alarm"
-      ? 1
-      : mood === "success" || mood === "recovery"
-        ? 2
-        : 0;
-  const companionGender =
-    presentation === "女性" ? "male" : "female";
-  const asset =
-    kind === "comic"
-      ? "/npc-comic-ranks.jpg"
-      : kind === "advisor"
-        ? "/npc-advisor-ranks.jpg"
-        : `/npc-companion-${companionGender}-ranks.jpg`;
+  const asset = getNpcPortraitAsset(
+    kind,
+    rank,
+    presentation,
+    mood,
+  );
   return (
     <span
       className={`npc-portrait npc-${kind} npc-mood-${mood} ${compact ? "compact" : ""}`}
       data-mood={mood}
-      data-rank={getRankConfig(rank).key}
+      data-asset-mood={asset.assetMood}
+      data-rank={asset.rankKey}
       role="img"
       aria-label={`${name}角色立绘`}
-      style={{
-        backgroundImage: `url("${asset}")`,
-        backgroundSize: "500% 300%",
-        backgroundPosition: `${rankIndex * 25}% ${moodRow * 50}%`,
-      }}
     >
+      <img src={asset.src} alt="" draggable={false} />
       <span className="sr-only">{name}</span>
     </span>
+  );
+}
+
+function PromotionEdict({
+  rank,
+  presentation,
+}: {
+  rank: string;
+  presentation: string;
+}) {
+  const rankConfig = getRankConfig(rank);
+  const rankName = getRankDisplayName(
+    rankConfig.key,
+    getCharacterGender(presentation),
+  );
+  const rooms = [
+    ["大堂", rankConfig.rooms.hall.name],
+    ["库房", rankConfig.rooms.treasury.name],
+    ["议事", rankConfig.rooms.council.name],
+    ["营造", rankConfig.rooms.works.name],
+  ] as const;
+
+  return (
+    <article className="promotion-edict" data-testid="promotion-edict">
+      <header className="promotion-edict-heading">
+        <span className="edict-kicker">晋升诏书</span>
+        <span className="edict-opening">制曰</span>
+        <h2 className="edict-title" id="promotion-title">
+          授{rankName}，移治{rankConfig.residenceName}
+        </h2>
+      </header>
+      <p className="edict-copy">
+        汝能核清钱粮、明定用度，又肯据实听议，政绩已足。今授
+        <strong className="edict-rank">{rankName}</strong>
+        ，自此入治
+        <strong>{rankConfig.residenceName}</strong>
+        ，掌其仓廪、议政与营造诸事。
+      </p>
+      <dl className="promotion-edict-rooms" aria-label="新官署四处空间">
+        {rooms.map(([label, name]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{name}</dd>
+          </div>
+        ))}
+      </dl>
+      <footer className="promotion-edict-footer">
+        <span>钦此</span>
+        <span className="edict-seal" aria-label="朝账官印">
+          朝账
+          <br />
+          之印
+        </span>
+      </footer>
+    </article>
   );
 }
 
@@ -1676,6 +1722,7 @@ function AppShell({
             <RankPortrait
               rank={state.profile.rank}
               presentation={state.profile.presentation}
+              fiscalState={fiscalState}
               label={`${state.profile.name}的${currentRankName}立绘`}
             />
             <div>
@@ -2233,6 +2280,7 @@ function AppShell({
                     <RankPortrait
                       rank={stage.key}
                       presentation={state.profile.presentation}
+                      fiscalState={visualState}
                       label={`${rankName}人物立绘`}
                     />
                     <div
@@ -2339,6 +2387,7 @@ function AppShell({
               <RankPortrait
                 rank={previewRank}
                 presentation={state.profile.presentation}
+                fiscalState={previewFiscalState}
                 label={`${getRankDisplayName(previewRank, characterGender)}完整人物立绘`}
               />
               <span className="eyebrow">仕途形象</span>
@@ -2387,6 +2436,7 @@ function AppShell({
               compact
               rank={state.profile.rank}
               presentation={state.profile.presentation}
+              fiscalState={fiscalState}
               label={`${state.profile.name}的${currentRankName}立绘`}
             />
             <div>
@@ -2732,23 +2782,12 @@ function AppShell({
       {promotionOpen && (
         <div className="modal-backdrop" role="presentation">
           <section className="modal compact promotion-modal" role="dialog" aria-modal="true" aria-labelledby="promotion-title">
-            <RankPortrait
+            <PromotionEdict
               rank={state.profile.rank}
               presentation={state.profile.presentation}
-              label={`新官阶${currentRankName}人物立绘`}
             />
-            <span className="eyebrow">晋升诏书</span>
-            <h2 id="promotion-title">政绩合格，晋升{currentRankName}</h2>
-            <p>人物服制、{currentRankConfig.residenceName}、{currentRankConfig.treasuryName}及议事角色已经同步切换。</p>
-            <div className="unlock-list">
-              <span>✓ {currentRankName}人物形象</span>
-              <span>✓ {currentRankConfig.rooms.hall.name}</span>
-              <span>✓ {currentRankConfig.rooms.treasury.name}</span>
-              <span>✓ {currentRankConfig.rooms.council.name}</span>
-              <span>✓ {currentRankConfig.rooms.works.name}</span>
-            </div>
             <button className="primary-button full" onClick={() => { setPromotionOpen(false); setTab("home"); }}>
-              返回升级后的{currentRankConfig.residenceName}
+              领旨，前往{currentRankConfig.residenceName}
             </button>
           </section>
         </div>

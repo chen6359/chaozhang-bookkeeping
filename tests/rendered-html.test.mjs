@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
@@ -23,12 +24,18 @@ import {
 import {
   getFiscalStateCopy,
   getRankDisplayName,
+  getRankPortraitAsset,
   getRoomConfig,
   getSceneSprite,
   rankConfigs,
   rankKeys,
   roomKeys,
 } from "../lib/world.ts";
+import {
+  getNpcAssetPath,
+  npcAssetMoods,
+  npcAssetRoutes,
+} from "../lib/characters.ts";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -274,8 +281,9 @@ test("risk page renders actual role cards instead of a role-design explanation",
     "each role portrait and its dialogue should live in the same role card",
   );
   assert.match(
-    styles,
-    /\.risk-role-identity > \.npc-portrait\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*border-radius:\s*0;/s,
+    styles.slice(styles.indexOf("/* Character presentation V3")),
+    /\.risk-role-identity\s*\{[^}]*background:\s*transparent;[\s\S]*?\.risk-role-dialogue\s*\{[^}]*border:\s*1px solid/s,
+    "the character should be unframed while its own dialogue remains readable",
   );
   assert.match(styles, /\.risk-modal \.decision-list,[\s\S]*?position:\s*static;/);
   assert.match(
@@ -285,14 +293,18 @@ test("risk page renders actual role cards instead of a role-design explanation",
   );
 });
 
-test("all five rank worlds and both player portrait sheets are real assets", async () => {
+test("all five ranks use standalone protagonist assets for every fiscal state", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const sceneAssets = rankConfigs.map((rank) => rank.sceneAsset.slice(1));
-  const portraitAssets = [
-    ...new Set(
-      rankConfigs.flatMap((rank) => Object.values(rank.portraitAssets)),
+  const fiscalStates = ["stable", "strained", "deficit"];
+  const genders = ["male", "female"];
+  const portraitAssets = rankConfigs.flatMap((rank) =>
+    genders.flatMap((gender) =>
+      fiscalStates.map((fiscalState) =>
+        getRankPortraitAsset(rank.key, gender, fiscalState).src.slice(1),
+      ),
     ),
-  ].map((asset) => asset.slice(1));
+  );
 
   assert.deepEqual(rankKeys, [
     "county",
@@ -302,16 +314,77 @@ test("all five rank worlds and both player portrait sheets are real assets", asy
     "emperor",
   ]);
   assert.equal(rankConfigs.length, 5);
-  for (const assetName of [...sceneAssets, ...portraitAssets]) {
+  assert.equal(portraitAssets.length, 30);
+  assert.equal(new Set(portraitAssets).size, 30);
+  for (const assetName of sceneAssets) {
     const asset = await readFile(new URL(`../public/${assetName}`, import.meta.url));
-    assert.ok(asset.byteLength > 400_000, `${assetName} should be a full optimized sprite asset`);
+    assert.ok(asset.byteLength > 400_000, `${assetName} should be a full room-scene asset`);
+  }
+  for (const assetName of portraitAssets) {
+    const asset = await readFile(new URL(`../public/${assetName}`, import.meta.url));
+    assert.ok(asset.byteLength > 8_000, `${assetName} should be a real standalone portrait`);
+    assert.doesNotMatch(assetName, /sheet|sprite|ranks-/);
+  }
+  for (const rank of rankKeys) {
+    for (const gender of genders) {
+      const hashes = [];
+      for (const fiscalState of fiscalStates) {
+        const assetName = getRankPortraitAsset(rank, gender, fiscalState).src.slice(1);
+        const asset = await readFile(new URL(`../public/${assetName}`, import.meta.url));
+        hashes.push(createHash("sha256").update(asset).digest("hex"));
+      }
+      assert.equal(
+        new Set(hashes).size,
+        3,
+        `${gender}/${rank} must visibly change across all three fiscal states`,
+      );
+    }
   }
   assert.match(source, /function RankPortrait\(/);
-  assert.match(source, /const portrait = getRankPortraitAsset\(rank, gender\);/);
+  assert.match(source, /const portrait = getRankPortraitAsset\(rank, gender, fiscalState\);/);
+  assert.match(source, /<img src=\{portrait\.src\} alt="" draggable=\{false\} \/>/);
   assert.match(
     source,
-    /backgroundPosition: `\$\{portrait\.index \* 25\}% \$\{compact \? "14%" : "center"\}`/,
+    /data-fiscal-state=\{portrait\.fiscalState\}/,
   );
+  assert.doesNotMatch(source, /ranks-(?:male|female)\.jpg|portrait\.index/);
+});
+
+test("fiscal-state portraits are wired through every protagonist surface", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(
+    source,
+    /rank=\{state\.profile\.rank\}[\s\S]*?presentation=\{state\.profile\.presentation\}[\s\S]*?fiscalState=\{fiscalState\}[\s\S]*?label=\{`\$\{state\.profile\.name\}的/,
+  );
+  assert.match(
+    source,
+    /rank=\{stage\.key\}[\s\S]*?presentation=\{state\.profile\.presentation\}[\s\S]*?fiscalState=\{visualState\}/,
+  );
+  assert.match(
+    source,
+    /rank=\{previewRank\}[\s\S]*?presentation=\{state\.profile\.presentation\}[\s\S]*?fiscalState=\{previewFiscalState\}/,
+  );
+  assert.match(
+    source,
+    /compact[\s\S]*?rank=\{state\.profile\.rank\}[\s\S]*?presentation=\{state\.profile\.presentation\}[\s\S]*?fiscalState=\{fiscalState\}/,
+  );
+});
+
+test("promotion is a real edict and never reuses a character portrait", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const start = source.indexOf("{promotionOpen && (");
+  const end = source.indexOf("{settingsOpen && (", start);
+  const promotion = source.slice(start, end);
+
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  assert.match(promotion, /<PromotionEdict/);
+  assert.match(source, /data-testid="promotion-edict"/);
+  assert.match(source, />制曰</);
+  assert.match(source, /授\{rankName\}，移治\{rankConfig\.residenceName\}/);
+  assert.match(source, /className="edict-seal"/);
+  assert.doesNotMatch(promotion, /<RankPortrait|<NpcPortrait/);
 });
 
 test("five ranks expose four rooms across all three persistent fiscal states", async () => {
@@ -369,12 +442,17 @@ test("build page combines rank characters, offices, and real room navigation", a
   assert.doesNotMatch(source, />场景库<|>官阶录<|className="scene-library"/);
 });
 
-test("rank world CSS supports sprite portraits and a phone-safe single-column preview", async () => {
+test("rank world CSS uses unframed cutouts and a phone-safe single-column preview", async () => {
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const characterStyles = styles.slice(styles.indexOf("/* Character presentation V3"));
 
   assert.match(
-    styles,
-    /\.rank-portrait\s*\{[^}]*background-repeat:\s*no-repeat;[^}]*background-size:\s*500% 100%;/s,
+    characterStyles,
+    /\.rank-portrait,[\s\S]*?\.npc-portrait\s*\{[^}]*overflow:\s*visible;[^}]*border:\s*0;[^}]*background-color:\s*transparent;[^}]*background-image:\s*none !important;[^}]*box-shadow:\s*none;/s,
+  );
+  assert.match(
+    characterStyles,
+    /\.rank-portrait > img,[\s\S]*?\.npc-portrait > img\s*\{[^}]*object-fit:\s*contain;[^}]*object-position:\s*center bottom;/s,
   );
   assert.match(
     styles,
@@ -396,40 +474,43 @@ test("rank world CSS supports sprite portraits and a phone-safe single-column pr
   );
 });
 
-test("rank-aware NPC sprites switch role, rank, and event mood", async () => {
+test("rank-aware NPCs use standalone role, rank, and event-mood assets", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-  const spriteAssets = [
-    "npc-comic-ranks.jpg",
-    "npc-advisor-ranks.jpg",
-    "npc-companion-female-ranks.jpg",
-    "npc-companion-male-ranks.jpg",
-  ];
+  const characterStyles = styles.slice(styles.indexOf("/* Character presentation V3"));
+  const assets = rankKeys.flatMap((rank) =>
+    npcAssetRoutes.flatMap((route) =>
+      npcAssetMoods.map((mood) => getNpcAssetPath(route, rank, mood).slice(1)),
+    ),
+  );
 
   assert.match(source, /type NpcMood\s*=/);
   assert.match(source, /data-mood=\{mood\}/);
-  assert.match(source, /data-rank=\{getRankConfig\(rank\)\.key\}/);
+  assert.match(source, /data-rank=\{asset\.rankKey\}/);
   assert.match(source, /riskLevel === "deficit" \? "alarm" : "warning"/);
   assert.match(source, /mood=\{role\.mood\}/);
   assert.match(source, /mood="council"/);
   assert.match(source, /didRecover \|\| recoveryCompleted \? "recovery" : "success"/);
-  assert.match(source, /const rankIndex = getRankIndex\(rank\);/);
-  assert.match(source, /backgroundSize: "500% 300%"/);
-  assert.match(source, /backgroundPosition: `\$\{rankIndex \* 25\}% \$\{moodRow \* 50\}%`/);
+  assert.match(source, /const asset = getNpcPortraitAsset\(/);
+  assert.match(source, /<img src=\{asset\.src\} alt="" draggable=\{false\} \/>/);
+  assert.doesNotMatch(source, /npc-(?:comic|advisor|companion-[^"]+)-ranks\.jpg|500% 300%/);
   assert.match(source, /className="feedback-role-identity"/);
   assert.match(source, /className="feedback-role-dialogue"/);
   assert.match(
-    styles,
-    /\.risk-role-identity > \.npc-portrait\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*border-radius:\s*0;/s,
+    characterStyles,
+    /\.risk-role-identity > \.npc-portrait\s*\{[^}]*overflow:\s*visible;[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
   );
   assert.match(
-    styles,
-    /\.feedback-role-identity > \.npc-portrait\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*border-radius:\s*0;/s,
+    characterStyles,
+    /\.feedback-role-identity > \.npc-portrait\s*\{[^}]*overflow:\s*visible;[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
   );
 
-  for (const assetName of spriteAssets) {
+  assert.equal(assets.length, 60);
+  assert.equal(new Set(assets).size, 60);
+  for (const assetName of assets) {
     const asset = await readFile(new URL(`../public/${assetName}`, import.meta.url));
-    assert.ok(asset.byteLength > 400_000, `${assetName} should be a full optimized role sprite`);
+    assert.ok(asset.byteLength > 5_000, `${assetName} should be a real standalone NPC`);
+    assert.doesNotMatch(assetName, /sheet|sprite|ranks-/);
   }
 });
 
@@ -588,28 +669,29 @@ test("rank vocabulary keeps all five career stages distinct", () => {
   assert.equal(getRankDisplayName("emperor", "male"), "皇帝");
 });
 
-test("NPC sprite panels keep a full portrait stage at desktop and mobile widths", async () => {
+test("unframed NPC cutouts stay paired with readable dialogue at desktop and mobile widths", async () => {
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const characterStyles = styles.slice(styles.indexOf("/* Character presentation V3"));
 
   assert.match(
-    styles,
-    /\.risk-role-card\s*\{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s,
+    characterStyles,
+    /\.risk-role-card,[\s\S]*?\.risk-role-companion\s*\{[^}]*grid-template-rows:\s*252px minmax\(0,\s*1fr\);[^}]*overflow:\s*visible;[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
   );
   assert.match(
-    styles,
-    /\.risk-role-identity\s*\{[^}]*aspect-ratio:\s*2\s*\/\s*3;/s,
+    characterStyles,
+    /\.risk-role-identity\s*\{[^}]*height:\s*252px;[^}]*aspect-ratio:\s*auto;/s,
   );
   assert.match(
-    styles,
-    /\.feedback-role-identity > \.npc-portrait,[\s\S]*?\.risk-role-identity > \.npc-portrait\s*\{[^}]*background-repeat:\s*no-repeat;[^}]*background-color:\s*#fbf1e1;/s,
+    characterStyles,
+    /\.feedback-role-identity > \.npc-portrait\s*\{[^}]*overflow:\s*visible;[^}]*background:\s*transparent;[\s\S]*?\.risk-role-identity > \.npc-portrait\s*\{[^}]*overflow:\s*visible;[^}]*background:\s*transparent;/s,
   );
   assert.match(
-    styles,
-    /\.feedback-role-card\s*\{[^}]*grid-template-columns:\s*160px minmax\(0,\s*1fr\);[^}]*justify-items:\s*stretch;/s,
+    characterStyles,
+    /\.feedback-role-card\s*\{[^}]*grid-template-columns:\s*168px minmax\(0,\s*1fr\);[^}]*overflow:\s*visible;[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
   );
   assert.match(
-    styles,
-    /@media \(max-width:\s*640px\)[\s\S]*?\.feedback-role-card\s*\{[^}]*grid-template-columns:\s*140px minmax\(0,\s*1fr\);[\s\S]*?\.feedback-role-identity\s*\{[^}]*width:\s*140px;[^}]*height:\s*210px;/s,
+    characterStyles,
+    /@media \(max-width:\s*640px\)[\s\S]*?\.feedback-role-card\s*\{[^}]*grid-template-columns:\s*118px minmax\(0,\s*1fr\);[\s\S]*?\.feedback-role-identity\s*\{[^}]*width:\s*118px;[^}]*height:\s*194px;/s,
   );
 });
 
