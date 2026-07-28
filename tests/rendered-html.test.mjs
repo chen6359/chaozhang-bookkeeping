@@ -16,7 +16,14 @@ import {
   inferLedgerClassification,
   inferLedgerQuestionIntent,
 } from "../lib/ledger.ts";
-import { getCourtVocabulary } from "../lib/court.ts";
+import {
+  getCourtAddress,
+  getCourtVocabulary,
+} from "../lib/court.ts";
+import {
+  getCouncilAvailability,
+  getCouncilPeriodKey,
+} from "../lib/council.ts";
 import {
   MAX_NEXT_CYCLE_REFERENCE,
   parseNextCycleReferenceAmount,
@@ -800,6 +807,78 @@ test("rank vocabulary keeps all five career stages distinct", () => {
   assert.equal(getCourtVocabulary("皇帝").treasury, "国库");
   assert.equal(getRankDisplayName("emperor", "female"), "女帝");
   assert.equal(getRankDisplayName("emperor", "male"), "皇帝");
+});
+
+test("NPC honorifics follow rank and speaker instead of reusing 大人", () => {
+  assert.equal(getCourtAddress("从九品县令", "comic", "大人"), "大人");
+  assert.equal(getCourtAddress("知府", "advisor", "林大人"), "林大人");
+  assert.equal(getCourtAddress("巡抚", "companion", "主上"), "主上");
+  assert.equal(getCourtAddress("监国", "comic", "大人"), "殿下");
+  assert.equal(getCourtAddress("皇帝", "comic", "大人"), "皇上");
+  assert.equal(getCourtAddress("皇帝", "advisor", "大人"), "陛下");
+  assert.equal(getCourtAddress("女帝", "comic", "大人"), "陛下");
+});
+
+test("council cadence blocks savings from reopening the same daily or weekly meeting", () => {
+  const monday = new Date("2026-07-27T02:00:00.000Z");
+  const sameDay = new Date("2026-07-27T10:00:00.000Z");
+  const tuesday = new Date("2026-07-28T02:00:00.000Z");
+  const nextMonday = new Date("2026-08-03T02:00:00.000Z");
+
+  assert.equal(getCouncilPeriodKey(monday, "daily"), "day:2026-07-27");
+  assert.equal(getCouncilPeriodKey(monday, "weekly"), "week:2026-07-27");
+
+  assert.deepEqual(
+    getCouncilAvailability({
+      cadence: "daily",
+      lastCompletedAt: monday.toISOString(),
+      ledgerCount: 5,
+      lastLedgerCount: 4,
+      now: sameDay,
+    }).reason,
+    "already-held",
+  );
+  assert.equal(
+    getCouncilAvailability({
+      cadence: "daily",
+      lastCompletedAt: monday.toISOString(),
+      ledgerCount: 5,
+      lastLedgerCount: 4,
+      now: tuesday,
+    }).canOpen,
+    true,
+  );
+  assert.equal(
+    getCouncilAvailability({
+      cadence: "weekly",
+      lastCompletedAt: monday.toISOString(),
+      ledgerCount: 5,
+      lastLedgerCount: 4,
+      now: tuesday,
+    }).canOpen,
+    false,
+    "a savings entry in the same week must not reopen council",
+  );
+  assert.equal(
+    getCouncilAvailability({
+      cadence: "weekly",
+      lastCompletedAt: monday.toISOString(),
+      ledgerCount: 5,
+      lastLedgerCount: 4,
+      now: nextMonday,
+    }).canOpen,
+    true,
+  );
+});
+
+test("mobile bookkeeping entry and council cadence controls are explicit and real", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /aria-label="记账：新增一笔收支"/);
+  assert.match(source, /className="mobile-add-icon"[\s\S]*?<small>记账<\/small>/);
+  assert.match(source, /data-testid=\{`council-cadence-\$\{cadence\}`\}/);
+  assert.match(source, /lastCouncilCompletedAt:\s*new Date\(\)\.toISOString\(\)/);
+  assert.doesNotMatch(source, /line:\s*"大人，新进的钱已经记清/);
 });
 
 test("unframed NPC cutouts stay paired with readable dialogue at desktop and mobile widths", async () => {

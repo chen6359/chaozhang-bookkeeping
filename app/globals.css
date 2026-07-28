@@ -2259,6 +2259,99 @@ legend {
   }
 }
 
+/* Functional clarity: council cadence and the primary mobile bookkeeping action. */
+.settings-control {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 253, 248, 0.78);
+}
+
+.settings-control > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-control small {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.settings-segment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings-list .settings-segment button {
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.settings-list .settings-segment button.selected {
+  border-color: rgba(163, 67, 54, 0.48);
+  background: linear-gradient(180deg, rgba(191, 152, 86, 0.2), rgba(163, 67, 54, 0.11));
+  color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px rgba(163, 67, 54, 0.08);
+}
+
+.council-cooldown {
+  display: grid;
+  flex: 1 1 320px;
+  gap: 5px;
+  min-height: 52px;
+  padding: 12px 16px;
+  border: 1px solid rgba(145, 103, 57, 0.24);
+  border-radius: 15px;
+  background: rgba(240, 231, 214, 0.72);
+  color: var(--ink);
+}
+
+.council-cooldown span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+@media (max-width: 900px) {
+  .mobile-add {
+    display: flex;
+    width: 62px;
+    height: 64px;
+    min-height: 64px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    padding: 5px 3px 6px;
+    font-size: inherit;
+  }
+
+  .mobile-nav .mobile-add .mobile-add-icon {
+    display: block;
+    width: auto;
+    height: auto;
+    border: 0;
+    background: transparent;
+    color: #fff8ed;
+    font-size: 25px;
+    line-height: 0.88;
+  }
+
+  .mobile-add small {
+    color: #fff8ed;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* V0.3 high-fidelity visual system                                           */
 /* -------------------------------------------------------------------------- */
@@ -5777,24 +5870,49 @@ textarea:focus {
     box-shadow: inset 0 0 0 1px rgba(151, 84, 51, 0.11);
   }
 
-  .mobile-add {
+  .mobile-nav button.mobile-add {
+    display: flex;
     position: relative;
     z-index: 2;
     right: auto;
     bottom: auto;
     left: auto;
-    width: 60px;
-    height: 60px;
-    min-height: 60px;
+    width: 64px;
+    height: 64px;
+    min-height: 64px;
+    flex-direction: column;
+    align-items: center;
     align-self: end;
+    justify-content: center;
     justify-self: center;
+    gap: 2px;
     transform: translateY(-6px);
     border: 4px solid #f8efe1;
+    border-radius: 21px;
     background: linear-gradient(145deg, #b64b3a, #7d2d28);
     box-shadow:
       0 10px 24px rgba(102, 42, 35, 0.3),
       inset 0 1px rgba(255, 255, 255, 0.24);
     font-size: 29px;
+  }
+
+  .mobile-nav button.mobile-add .mobile-add-icon {
+    display: block;
+    width: auto;
+    height: auto;
+    border: 0;
+    background: transparent;
+    color: #fff8ed;
+    font-size: 24px;
+    line-height: 0.8;
+  }
+
+  .mobile-nav button.mobile-add small {
+    color: #fff8ed;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    line-height: 1;
   }
 
   .page-foot-ornament {

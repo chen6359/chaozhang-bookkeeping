@@ -6,6 +6,7 @@ export type CourtVocabulary = {
 };
 
 type CourtRank = "county" | "prefecture" | "governor" | "regent" | "emperor" | "unknown";
+export type CourtSpeakerKind = "comic" | "advisor" | "companion";
 
 const resolveCourtRank = (rank: string | null | undefined): CourtRank => {
   const normalized = typeof rank === "string"
@@ -76,4 +77,22 @@ export const getCourtVocabulary = (
     emergency: "钱粮急报",
     realm: "署中",
   };
+};
+
+export const getCourtAddress = (
+  rank: string | null | undefined,
+  speaker: CourtSpeakerKind,
+  preferredAddress?: string | null,
+): string => {
+  const resolvedRank = resolveCourtRank(rank);
+
+  if (resolvedRank === "emperor") {
+    if (speaker === "comic" && !/女帝/.test(rank ?? "")) return "皇上";
+    return "陛下";
+  }
+
+  if (resolvedRank === "regent") return "殿下";
+
+  const normalizedPreferred = preferredAddress?.trim();
+  return normalizedPreferred || "大人";
 };

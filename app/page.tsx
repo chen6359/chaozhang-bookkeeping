@@ -15,7 +15,12 @@ import {
   inferLedgerClassification,
   inferLedgerQuestionIntent,
 } from "../lib/ledger";
-import { getCourtVocabulary } from "../lib/court";
+import { getCourtAddress, getCourtVocabulary } from "../lib/court";
+import {
+  getCouncilAvailability,
+  getCouncilCadenceLabel,
+  type CouncilCadence,
+} from "../lib/council";
 import {
   MAX_NEXT_CYCLE_REFERENCE,
   parseNextCycleReferenceAmount,
@@ -89,6 +94,8 @@ type PrototypeState = {
   councilDecision: string;
   councilLedgerCount: number;
   councilRound: number;
+  councilCadence: CouncilCadence;
+  lastCouncilCompletedAt: string;
   demoRecoveryDone: boolean;
   nextCycleReferences: Partial<Record<BudgetKey, NextCycleReference>>;
 };
@@ -175,6 +182,8 @@ const createBlankRealState = (): PrototypeState => ({
   councilDecision: "",
   councilLedgerCount: 0,
   councilRound: 0,
+  councilCadence: "weekly",
+  lastCouncilCompletedAt: "",
   demoRecoveryDone: false,
   nextCycleReferences: {},
 });
@@ -215,6 +224,8 @@ const createDemoState = (): PrototypeState => ({
   councilDecision: "",
   councilLedgerCount: 0,
   councilRound: 0,
+  councilCadence: "weekly",
+  lastCouncilCompletedAt: "",
   demoRecoveryDone: false,
   nextCycleReferences: {},
 });
@@ -254,6 +265,11 @@ const hydratePrototypeState = (candidate: PrototypeState): PrototypeState => {
     ...candidate,
     councilLedgerCount: candidate.councilLedgerCount ?? 0,
     councilRound: candidate.councilRound ?? (candidate.councilDone ? 1 : 0),
+    councilCadence:
+      candidate.councilCadence === "daily" ? "daily" : "weekly",
+    lastCouncilCompletedAt:
+      candidate.lastCouncilCompletedAt ??
+      (candidate.councilDone ? new Date().toISOString() : ""),
     demoRecoveryDone:
       candidate.demoRecoveryDone ?? legacyRecoveryCompleted,
     nextCycleReferences,
@@ -1054,7 +1070,16 @@ function AppShell({
   const hasRisk = overspend > 0 || (state.riskTriggered && hasCategoryAlert);
   const riskLevel: "near" | "overspent" | "deficit" =
     treasuryBalance < 0 ? "deficit" : overspend > 0 ? "overspent" : "near";
-  const courtAddress = state.profile.address || "大人";
+  const courtAddress = getCourtAddress(
+    state.profile.rank,
+    "advisor",
+    state.profile.address,
+  );
+  const comicAddress = getCourtAddress(
+    state.profile.rank,
+    "comic",
+    state.profile.address,
+  );
   const courtRoles = getCourtRoles(
     state.profile.rank,
     state.profile.presentation,
@@ -1092,6 +1117,12 @@ function AppShell({
     isBudgetKey(leadingCategory.key)
       ? state.nextCycleReferences[leadingCategory.key]
       : undefined;
+  const councilAvailability = getCouncilAvailability({
+    cadence: state.councilCadence,
+    lastCompletedAt: state.lastCouncilCompletedAt,
+    ledgerCount: state.ledger.length,
+    lastLedgerCount: state.councilLedgerCount,
+  });
   const currentRiskCast: FeedbackRole[] =
     riskLevel === "near"
       ? [
@@ -1103,8 +1134,8 @@ function AppShell({
             mood: currentRiskMood,
             line:
               leadingCategory.key === "其他"
-                ? `${courtAddress}！账房里多出一笔还没归部的支出，小的先记进总账啦！`
-                : `${courtAddress}！${leadingCategory.bureau}的牌子快见底啦，已经用到${leadingCategory.percent}%了！`,
+                ? `${comicAddress}！账房里多出一笔还没归部的支出，小的先记进总账啦！`
+                : `${comicAddress}！${leadingCategory.bureau}的牌子快见底啦，已经用到${leadingCategory.percent}%了！`,
           },
           {
             mark: "策",
@@ -1127,8 +1158,8 @@ function AppShell({
             mood: currentRiskMood,
             line:
               riskLevel === "deficit"
-                ? `${courtAddress}！不好啦！${courtVocabulary.treasury}已经见底，门房正抱着典当清册跑来请示——再这么花，${courtVocabulary.residence}的屏风真要抬出门啦！`
-                : `${courtAddress}！本周期用度越过消费池，已经动到${courtVocabulary.treasury}${formatMoney(overspend)}啦！`,
+                ? `${comicAddress}！不好啦！${courtVocabulary.treasury}已经见底，门房正抱着典当清册跑来请示——再这么花，${courtVocabulary.residence}的屏风真要抬出门啦！`
+                : `${comicAddress}！本周期用度越过消费池，已经动到${courtVocabulary.treasury}${formatMoney(overspend)}啦！`,
           },
           {
             mark: "策",
@@ -1432,7 +1463,7 @@ function AppShell({
             tone: "回报",
             mood: savingsMood,
             line: didRecover
-              ? `${courtAddress}！${courtVocabulary.treasury}终于翻回正数，屋瓦补上了，廊下的灯也重新亮啦！当前账面为${formatMoney(projectedTreasury)}。`
+              ? `${comicAddress}！${courtVocabulary.treasury}终于翻回正数，屋瓦补上了，廊下的灯也重新亮啦！当前账面为${formatMoney(projectedTreasury)}。`
               : projectedTreasury < 0
                 ? `这笔储蓄已经记清，${courtVocabulary.treasury}回升到${formatMoney(projectedTreasury)}。再补${formatMoney(-projectedTreasury)}，就能让${courtVocabulary.residence}重新亮灯啦！`
                 : `这笔储蓄已经写入${courtVocabulary.treasury}账簿，当前账面为${formatMoney(projectedTreasury)}。`,
@@ -1458,7 +1489,7 @@ function AppShell({
         title: "新收入已经登记",
         fact: `新增收入 ${formatMoney(pending.amount)}，尚未自动分配`,
         cast: [
-          { mark: "吏", kind: "comic", name: courtRoles.comic, tone: "报喜", mood: "success", line: "大人，新进的钱已经记清，小的绝不擅自往任何库房里塞！" },
+          { mark: "吏", kind: "comic", name: courtRoles.comic, tone: "报喜", mood: "success", line: `${comicAddress}，新进的钱已经记清，小的绝不擅自往任何库房里塞！` },
           { mark: "策", kind: "advisor", name: courtRoles.advisor, tone: "提醒", mood: "success", line: `这笔收入目前尚未分入消费池或${courtVocabulary.treasury}，请记得重新安排。` },
         ],
       });
@@ -1467,7 +1498,7 @@ function AppShell({
         title: "这笔账已经记好",
         fact: `${pending.note} ${formatMoney(pending.amount)} 已确认入账`,
         cast: [
-          { mark: "吏", kind: "comic", name: courtRoles.comic, tone: "回报", mood: "success", line: `${courtAddress}，${pending.note}这笔已经归进${pending.category}，小的连一文都没抄错！` },
+          { mark: "吏", kind: "comic", name: courtRoles.comic, tone: "回报", mood: "success", line: `${comicAddress}，${pending.note}这笔已经归进${pending.category}，小的连一文都没抄错！` },
           { mark: "安", kind: "companion", name: courtRoles.companion, tone: "温言", mood: "success", line: `记账不是为了责备这一笔。消费池现在还剩${formatMoney(state.profile.disposable - projectedExpense)}，你只是比刚才更清楚下一步怎么花。` },
         ],
       });
@@ -1639,6 +1670,7 @@ function AppShell({
           : "本次奏报维持现状"),
       councilLedgerCount: current.ledger.length,
       councilRound: (current.councilRound ?? 0) + 1,
+      lastCouncilCompletedAt: new Date().toISOString(),
       profile: {
         ...current.profile,
         rank: nextRank,
@@ -1799,7 +1831,7 @@ function AppShell({
           />
           <div>
             <span className="eyebrow">{courtRoles.comic} · 候命</span>
-            <h2>账簿已经铺好，等大人落下第一笔</h2>
+            <h2>账簿已经铺好，等{courtAddress}落下第一笔</h2>
             <p>记下每一笔收支，分类预算和{courtVocabulary.residence}都会随之变化。</p>
           </div>
           <button className="outline-button" onClick={() => openRecorder()}>记一笔</button>
@@ -1982,7 +2014,7 @@ function AppShell({
               </div>
               {renderCurrentReferenceCard("council")}
               <div className="button-row">
-                {state.ledger.length > state.councilLedgerCount ? (
+                {councilAvailability.canOpen ? (
                   <button
                     className="primary-button"
                     onClick={() => {
@@ -1995,12 +2027,17 @@ function AppShell({
                       setCouncilExpenseOpen(false);
                     }}
                   >
-                    开启新一轮议事
+                    开启{councilAvailability.periodLabel}议事
                   </button>
-                ) : (
+                ) : councilAvailability.reason === "no-new-ledger" ? (
                   <button className="primary-button" onClick={() => openRecorder()}>
                     先记一笔新账
                   </button>
+                ) : (
+                  <div className="council-cooldown" role="status">
+                    <strong>{getCouncilCadenceLabel(state.councilCadence)}</strong>
+                    <span>{councilAvailability.message}</span>
+                  </div>
                 )}
                 <button className="secondary-button" onClick={() => setTab("home")}>
                   返回{courtVocabulary.residence}
@@ -2015,7 +2052,11 @@ function AppShell({
       <div className="page-stack">
         <section className="page-title">
           <div><span className="eyebrow">本次账情奏报</span><h1>{courtRoles.council}</h1></div>
-          <span className="status-pill">{mode === "demo" ? "体验奏报 · 可立即开议" : "随时可以开议"}</span>
+          <span className="status-pill">
+            {mode === "demo"
+              ? `体验奏报 · ${getCouncilCadenceLabel(state.councilCadence)}`
+              : getCouncilCadenceLabel(state.councilCadence)}
+          </span>
         </section>
         {councilScene}
         <section className="council-stage">
@@ -2035,8 +2076,8 @@ function AppShell({
                 presentation={state.profile.presentation}
               />
               <p className="eyebrow">{courtRoles.advisor}主持</p>
-              <h2>当前账本已经核清，请大人自主开议</h2>
-              <p>何时开议都不会扣分；完成后，本次政绩只结算一次。</p>
+              <h2>当前账本已经核清，请{courtAddress}自主开议</h2>
+              <p>{councilAvailability.periodLabel}只能完成一次；新增消费或储蓄不会提前重置。</p>
               <button className="primary-button" onClick={() => setCouncilStep(1)} data-testid="start-council">
                 开启本次朝会
               </button>
@@ -2484,7 +2525,10 @@ function AppShell({
             <span>{item.mark}</span>{item.label}
           </button>
         ))}
-        <button className="mobile-add" aria-label="记一笔" onClick={() => openRecorder()}>＋</button>
+        <button className="mobile-add" aria-label="记账：新增一笔收支" onClick={() => openRecorder()}>
+          <span className="mobile-add-icon" aria-hidden="true">＋</span>
+          <small>记账</small>
+        </button>
         {tabItems.slice(2).map((item) => (
           <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => setTab(item.key)}>
             <span>{item.mark}</span>{item.label}
@@ -2820,6 +2864,30 @@ function AppShell({
               <button className="icon-button" aria-label="关闭设置" onClick={() => setSettingsOpen(false)}>×</button>
             </div>
             <div className="settings-list">
+              <section className="settings-control" aria-labelledby="council-cadence-title">
+                <div>
+                  <strong id="council-cadence-title">朝会频率</strong>
+                  <small>完成后按所选周期锁定，新增储蓄不会重复解锁。</small>
+                </div>
+                <div className="settings-segment" role="group" aria-label="选择朝会频率">
+                  {(["daily", "weekly"] as CouncilCadence[]).map((cadence) => (
+                    <button
+                      key={cadence}
+                      className={state.councilCadence === cadence ? "selected" : ""}
+                      aria-pressed={state.councilCadence === cadence}
+                      onClick={() =>
+                        setState((current) => ({
+                          ...current,
+                          councilCadence: cadence,
+                        }))
+                      }
+                      data-testid={`council-cadence-${cadence}`}
+                    >
+                      {getCouncilCadenceLabel(cadence)}
+                    </button>
+                  ))}
+                </div>
+              </section>
               <button onClick={() => { setSettingsOpen(false); onExitMode(); }}>切换账本</button>
               {mode === "demo" && (
                 <button
