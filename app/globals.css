@@ -5568,3 +5568,286 @@ textarea:focus {
     font-size: 27px;
   }
 }
+
+/* Presentation V4: the world cards use the character's height rather than the
+   narrow portrait column as their sizing anchor. This keeps every official on
+   the same foot line without pushing a hat or hair above the clipped card. */
+.rank-world-visual {
+  grid-template-columns: clamp(196px, 23%, 244px) minmax(0, 1fr);
+}
+
+.rank-world-visual > .rank-portrait,
+.rank-world-card.current .rank-world-visual > .rank-portrait {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 340px;
+  align-self: stretch;
+  overflow: visible;
+  padding: 0;
+}
+
+.rank-world-visual > .rank-portrait > img,
+.rank-world-card.current .rank-world-visual > .rank-portrait > img {
+  position: absolute;
+  right: auto;
+  bottom: 0;
+  left: 50%;
+  width: auto;
+  max-width: none;
+  height: 104%;
+  max-height: 104%;
+  object-fit: contain;
+  object-position: center bottom;
+  transform: translateX(-50%);
+  transform-origin: center bottom;
+}
+
+/* Every application surface now ends with one coherent parchment-and-seal
+   flourish instead of exposing a flat grey remainder above the mobile dock. */
+.prototype-app {
+  min-height: 100dvh;
+}
+
+.app-layout {
+  min-height: calc(100dvh - var(--topbar-height));
+}
+
+.main-content {
+  display: flex;
+  position: relative;
+  min-width: 0;
+  min-height: calc(100dvh - var(--topbar-height));
+  flex-direction: column;
+}
+
+.main-content > .page-stack {
+  width: 100%;
+}
+
+.page-foot-ornament {
+  display: flex;
+  position: relative;
+  width: min(100%, 1080px);
+  min-height: 132px;
+  flex: 1 0 132px;
+  align-items: center;
+  align-self: center;
+  justify-content: center;
+  gap: 14px;
+  overflow: hidden;
+  margin-top: 26px;
+  border: 1px solid rgba(145, 98, 54, 0.12);
+  border-bottom: 0;
+  border-radius: 28px 28px 0 0;
+  background:
+    radial-gradient(ellipse at 18% 68%, rgba(163, 89, 57, 0.1), transparent 20%),
+    radial-gradient(ellipse at 78% 72%, rgba(195, 154, 74, 0.12), transparent 23%),
+    linear-gradient(180deg, rgba(255, 253, 247, 0.52), rgba(230, 210, 179, 0.3));
+  padding: 20px clamp(18px, 6vw, 70px);
+  color: rgba(125, 54, 45, 0.76);
+  pointer-events: none;
+}
+
+.page-foot-ornament::before {
+  position: absolute;
+  right: 4%;
+  bottom: -2px;
+  left: 4%;
+  height: 82%;
+  background:
+    linear-gradient(145deg, transparent 0 45%, currentColor 46% 49%, transparent 50%) 8% 63% / 76px 42px no-repeat,
+    linear-gradient(215deg, transparent 0 45%, currentColor 46% 49%, transparent 50%) 19% 63% / 76px 42px no-repeat,
+    linear-gradient(145deg, transparent 0 45%, currentColor 46% 49%, transparent 50%) 72% 72% / 62px 34px no-repeat,
+    linear-gradient(215deg, transparent 0 45%, currentColor 46% 49%, transparent 50%) 82% 72% / 62px 34px no-repeat,
+    linear-gradient(90deg, transparent 0 6%, currentColor 6% 6.5%, transparent 6.5% 93.5%, currentColor 93.5% 94%, transparent 94%) 50% 100% / 84% 50% no-repeat;
+  opacity: 0.15;
+  content: "";
+}
+
+.page-foot-ornament > span {
+  position: relative;
+  z-index: 1;
+  height: 1px;
+  flex: 1 1 auto;
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(151, 97, 54, 0.24) 22%,
+      rgba(151, 97, 54, 0.48) 50%,
+      rgba(151, 97, 54, 0.24) 78%,
+      transparent
+    );
+}
+
+.page-foot-ornament > strong {
+  display: grid;
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  place-items: center;
+  transform: rotate(-3deg);
+  border: 2px double currentColor;
+  border-radius: 8px 3px 8px 3px;
+  background: rgba(255, 250, 240, 0.66);
+  font-family: "STKaiti", "KaiTi", serif;
+  font-size: 16px;
+  box-shadow: 0 7px 18px rgba(84, 55, 28, 0.07);
+}
+
+.page-foot-treasury {
+  color: rgba(151, 112, 43, 0.78);
+  background:
+    radial-gradient(circle at 20% 74%, rgba(180, 131, 46, 0.15), transparent 18%),
+    radial-gradient(circle at 76% 70%, rgba(180, 131, 46, 0.12), transparent 20%),
+    linear-gradient(180deg, rgba(255, 253, 245, 0.62), rgba(225, 205, 158, 0.32));
+}
+
+.page-foot-council {
+  color: rgba(43, 92, 89, 0.78);
+  background:
+    radial-gradient(ellipse at 22% 74%, rgba(58, 115, 108, 0.13), transparent 22%),
+    radial-gradient(ellipse at 78% 70%, rgba(87, 130, 117, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(251, 253, 248, 0.62), rgba(197, 220, 207, 0.28));
+}
+
+.page-foot-build {
+  color: rgba(133, 83, 37, 0.78);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 34px, rgba(135, 88, 43, 0.035) 34px 35px),
+    radial-gradient(ellipse at 50% 78%, rgba(151, 104, 55, 0.13), transparent 34%),
+    linear-gradient(180deg, rgba(255, 253, 248, 0.62), rgba(222, 198, 162, 0.3));
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    display: flex;
+    min-height: calc(100dvh - var(--topbar-height));
+    flex-direction: column;
+  }
+
+  .main-content {
+    width: 100%;
+    min-height: calc(100dvh - var(--topbar-height));
+    flex: 1 0 auto;
+    padding-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-nav {
+    right: 10px;
+    bottom: 0;
+    left: 10px;
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    border: 1px solid rgba(119, 79, 39, 0.18);
+    border-bottom: 0;
+    border-radius: 24px 24px 0 0;
+    background:
+      radial-gradient(circle at 50% -14px, rgba(163, 67, 54, 0.08), transparent 42px),
+      linear-gradient(180deg, rgba(255, 253, 248, 0.97), rgba(244, 234, 217, 0.98));
+    box-shadow:
+      0 -10px 30px rgba(75, 48, 24, 0.1),
+      inset 0 1px rgba(255, 255, 255, 0.78);
+    padding:
+      7px max(8px, env(safe-area-inset-right))
+      max(5px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+    backdrop-filter: blur(22px);
+  }
+
+  .mobile-nav button {
+    min-height: 58px;
+    border-radius: 14px;
+    color: #493d31;
+  }
+
+  .mobile-nav button span {
+    border-color: rgba(115, 77, 42, 0.24);
+    border-radius: 9px 4px 9px 4px;
+    background: rgba(255, 253, 248, 0.58);
+  }
+
+  .mobile-nav button.active {
+    background: linear-gradient(180deg, rgba(191, 152, 86, 0.17), rgba(163, 67, 54, 0.09));
+    color: var(--accent-deep);
+    box-shadow: inset 0 0 0 1px rgba(151, 84, 51, 0.11);
+  }
+
+  .mobile-add {
+    position: relative;
+    z-index: 2;
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 60px;
+    height: 60px;
+    min-height: 60px;
+    align-self: end;
+    justify-self: center;
+    transform: translateY(-6px);
+    border: 4px solid #f8efe1;
+    background: linear-gradient(145deg, #b64b3a, #7d2d28);
+    box-shadow:
+      0 10px 24px rgba(102, 42, 35, 0.3),
+      inset 0 1px rgba(255, 255, 255, 0.24);
+    font-size: 29px;
+  }
+
+  .page-foot-ornament {
+    min-height: 116px;
+    flex-basis: 116px;
+    gap: 10px;
+    margin-top: 18px;
+    border-radius: 22px 22px 0 0;
+    padding: 18px 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --bottom-nav-height: 78px;
+  }
+
+  .main-content {
+    padding-bottom: calc(var(--bottom-nav-height) + 22px + env(safe-area-inset-bottom));
+  }
+
+  .rank-world-visual,
+  .rank-world-card.current .rank-world-visual {
+    min-height: 238px;
+    grid-template-columns: 142px minmax(0, 1fr);
+  }
+
+  .rank-world-visual > .rank-portrait,
+  .rank-world-card.current .rank-world-visual > .rank-portrait {
+    width: 142px;
+    height: 100%;
+    min-height: 238px;
+    padding-top: 0;
+  }
+
+  .rank-world-visual > .rank-portrait > img,
+  .rank-world-card.current .rank-world-visual > .rank-portrait > img {
+    bottom: 0;
+    height: 104%;
+    max-height: 104%;
+  }
+}
+
+@media (max-width: 360px) {
+  .rank-world-visual,
+  .rank-world-card.current .rank-world-visual {
+    min-height: 210px;
+    grid-template-columns: 116px minmax(0, 1fr);
+  }
+
+  .rank-world-visual > .rank-portrait,
+  .rank-world-card.current .rank-world-visual > .rank-portrait {
+    width: 116px;
+    min-height: 210px;
+  }
+}

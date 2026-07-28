@@ -279,39 +279,39 @@ const getCourtRoles = (rank: string, presentation: string) => {
   if (rankKey === "emperor") {
     return {
       comic: "御前太监",
-      advisor: "丞相",
+      advisor: "户部尚书",
       companion: partnerIsMale ? "皇夫" : "皇后",
       council: "御前议政",
     };
   }
   if (rankKey === "regent") {
     return {
-      comic: "王府掌事",
-      advisor: "中枢参议",
+      comic: "内侍总管",
+      advisor: "首辅",
       companion: partnerIsMale ? "王夫" : "王妃",
       council: "政事堂议事",
     };
   }
   if (rankKey === "governor") {
     return {
-      comic: "行辕总管",
-      advisor: "督府参议",
+      comic: "巡抚亲随",
+      advisor: "布政使",
       companion: partnerIsMale ? "随行夫君" : "随行夫人",
       council: "督府议事",
     };
   }
   if (rankKey === "prefecture") {
     return {
-      comic: "府衙掌事",
-      advisor: "州府长史",
+      comic: "府衙管事",
+      advisor: "通判",
       companion: partnerIsMale ? "随行夫君" : "随行夫人",
       council: "州府朝会",
     };
   }
   return {
     comic: "钱粮小吏",
-    advisor: "县丞",
-    companion: "掌灯知己",
+    advisor: "师爷",
+    companion: partnerIsMale ? "夫君" : "夫人",
     council: "县署朝会",
   };
 };
@@ -394,8 +394,10 @@ function NpcPortrait({
       data-mood={mood}
       data-asset-mood={asset.assetMood}
       data-rank={asset.rankKey}
+      data-character-id={asset.characterId}
+      data-character-family={asset.route}
       role="img"
-      aria-label={`${name}角色立绘`}
+      aria-label={`${name}（${asset.identity}）角色立绘`}
     >
       <img src={asset.src} alt="" draggable={false} />
       <span className="sr-only">{name}</span>
@@ -2468,17 +2470,27 @@ function AppShell({
           {tab === "treasury" && renderTreasury()}
           {tab === "council" && renderCouncil()}
           {tab === "build" && renderBuild()}
+          <div className={`page-foot-ornament page-foot-${tab}`} aria-hidden="true">
+            <span />
+            <strong>账</strong>
+            <span />
+          </div>
         </section>
       </div>
 
       <nav className="mobile-nav" aria-label="移动端主要导航">
-        {tabItems.map((item) => (
+        {tabItems.slice(0, 2).map((item) => (
+          <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => setTab(item.key)}>
+            <span>{item.mark}</span>{item.label}
+          </button>
+        ))}
+        <button className="mobile-add" aria-label="记一笔" onClick={() => openRecorder()}>＋</button>
+        {tabItems.slice(2).map((item) => (
           <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => setTab(item.key)}>
             <span>{item.mark}</span>{item.label}
           </button>
         ))}
       </nav>
-      <button className="mobile-add" aria-label="记一笔" onClick={() => openRecorder()}>＋</button>
 
       {recordOpen && (
         <div className="modal-backdrop" role="presentation">
@@ -2603,7 +2615,12 @@ function AppShell({
             <p className="feedback-truth">数据来自你的账簿记录。</p>
             <div className="feedback-cast">
               {feedback.cast.map((role) => (
-                <article className="feedback-role-card" key={`${role.name}-${role.tone}`}>
+                <article
+                  className={`feedback-role-card feedback-role-${role.kind}`}
+                  data-role-kind={role.kind}
+                  data-role-name={role.name}
+                  key={`${role.kind}-${role.name}-${role.tone}`}
+                >
                   <div className="feedback-role-identity">
                     <NpcPortrait
                       kind={role.kind}
@@ -2656,7 +2673,9 @@ function AppShell({
                 <article
                   className={`risk-role-card risk-role-${role.kind}`}
                   data-testid="risk-role-card"
-                  key={`${role.name}-${role.tone}`}
+                  data-role-kind={role.kind}
+                  data-role-name={role.name}
+                  key={`${role.kind}-${role.name}-${role.tone}`}
                 >
                   <div className="risk-role-identity">
                     <NpcPortrait

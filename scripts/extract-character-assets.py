@@ -280,7 +280,27 @@ def extract_npcs() -> None:
             for column, rank in enumerate(RANKS):
                 left = round(column * width / 5)
                 right = round((column + 1) * width / 5)
-                crop = sheet.crop((left, top, right, bottom))
+                individual_source = (
+                    ROOT
+                    / "design-assets"
+                    / "characters"
+                    / "npc-individual"
+                    / route
+                    / rank
+                    / f"{mood}.webp"
+                )
+                if route in {"comic", "advisor"}:
+                    if not individual_source.exists():
+                        raise FileNotFoundError(
+                            f"missing standalone {route} asset: {individual_source}"
+                        )
+                    crop = Image.open(individual_source).convert("RGB")
+                else:
+                    crop = (
+                        Image.open(individual_source).convert("RGB")
+                        if individual_source.exists()
+                        else sheet.crop((left, top, right, bottom))
+                    )
                 save_asset(
                     crop,
                     OUT / "npc" / route / rank / f"{mood}.webp",
@@ -307,6 +327,11 @@ def validate() -> None:
 
 
 if __name__ == "__main__":
-    extract_players()
+    if not all(
+        (OUT / "player" / gender / rank / "stable.webp").exists()
+        for gender in ("male", "female")
+        for rank in RANKS
+    ):
+        extract_players()
     extract_npcs()
     validate()

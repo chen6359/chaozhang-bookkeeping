@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 import {
@@ -33,6 +33,9 @@ import {
 } from "../lib/world.ts";
 import {
   getNpcAssetPath,
+  getNpcPortraitAsset,
+  npcCharacterFamilies,
+  npcRankCharacterProfiles,
   npcAssetMoods,
   npcAssetRoutes,
 } from "../lib/characters.ts";
@@ -124,7 +127,7 @@ test("all four primary destinations have desktop, mobile, content, and room rout
   );
   assert.match(
     source,
-    /<nav className="mobile-nav"[\s\S]*?\{tabItems\.map/,
+    /<nav className="mobile-nav"[\s\S]*?tabItems\.slice\(0,\s*2\)[\s\S]*?tabItems\.slice\(2\)/,
     "mobile navigation should be generated from the same four-route contract",
   );
   assert.match(source, /onClick=\{\(\) => setTab\("home"\)\}>进入大堂/);
@@ -270,9 +273,8 @@ test("risk page renders actual role cards instead of a role-design explanation",
   assert.match(source, /data-testid="risk-role-card"/);
   assert.match(source, /currentRiskCast\.map/);
   assert.match(source, /钱粮小吏/);
-  assert.match(source, /县丞/);
-  assert.match(source, /掌灯知己/);
-  assert.match(source, /rankKey === "emperor"[\s\S]*?comic: "御前太监"[\s\S]*?advisor: "丞相"/);
+  assert.match(source, /advisor: "师爷"/);
+  assert.match(source, /rankKey === "emperor"[\s\S]*?comic: "御前太监"[\s\S]*?advisor: "户部尚书"/);
   assert.match(source, /companion: partnerIsMale \? "皇夫" : "皇后"/);
   assert.doesNotMatch(source, /<NpcStage cast=\{currentRiskCast\}/);
   assert.match(
@@ -487,6 +489,10 @@ test("rank-aware NPCs use standalone role, rank, and event-mood assets", async (
   assert.match(source, /type NpcMood\s*=/);
   assert.match(source, /data-mood=\{mood\}/);
   assert.match(source, /data-rank=\{asset\.rankKey\}/);
+  assert.match(source, /data-character-id=\{asset\.characterId\}/);
+  assert.match(source, /data-character-family=\{asset\.route\}/);
+  assert.match(source, /data-role-kind=\{role\.kind\}/);
+  assert.match(source, /data-role-name=\{role\.name\}/);
   assert.match(source, /riskLevel === "deficit" \? "alarm" : "warning"/);
   assert.match(source, /mood=\{role\.mood\}/);
   assert.match(source, /mood="council"/);
@@ -512,6 +518,77 @@ test("rank-aware NPCs use standalone role, rank, and event-mood assets", async (
     assert.ok(asset.byteLength > 5_000, `${assetName} should be a real standalone NPC`);
     assert.doesNotMatch(assetName, /sheet|sprite|ranks-/);
   }
+});
+
+test("rank-specific messengers and advisors cannot silently fall back to collage crops", async () => {
+  const script = await readFile(
+    new URL("../scripts/extract-character-assets.py", import.meta.url),
+    "utf8",
+  );
+  assert.match(script, /ROOT\s*\/\s*"design-assets"\s*\/\s*"characters"/);
+  assert.match(script, /if route in \{"comic", "advisor"\}:/);
+  assert.match(script, /raise FileNotFoundError\(/);
+
+  for (const route of ["comic", "advisor"]) {
+    for (const rank of rankKeys) {
+      for (const mood of npcAssetMoods) {
+        await access(
+          new URL(
+            `../design-assets/characters/npc-individual/${route}/${rank}/${mood}.webp`,
+            import.meta.url,
+          ),
+        );
+      }
+    }
+  }
+});
+
+test("three-person warnings resolve to three explicit character families", async () => {
+  assert.deepEqual(
+    Object.keys(npcCharacterFamilies),
+    ["comic", "advisor", "companion-female", "companion-male"],
+  );
+
+  for (const rank of rankKeys) {
+    for (const presentation of ["男性", "女性"]) {
+      const cast = [
+        getNpcPortraitAsset("comic", rank, presentation, "warning"),
+        getNpcPortraitAsset("advisor", rank, presentation, "warning"),
+        getNpcPortraitAsset("companion", rank, presentation, "warning"),
+      ];
+      assert.equal(new Set(cast.map((role) => role.route)).size, 3);
+      assert.equal(new Set(cast.map((role) => role.characterId)).size, 3);
+      assert.equal(new Set(cast.map((role) => role.src)).size, 3);
+      assert.equal(new Set(cast.map((role) => role.identity)).size, 3);
+    }
+  }
+  assert.equal(
+    new Set(
+      rankKeys.flatMap((rank) => [
+        npcRankCharacterProfiles[rank].comic.id,
+        npcRankCharacterProfiles[rank].advisor.id,
+      ]),
+    ).size,
+    10,
+    "messengers and advisors must be ten rank-specific people, not two people changing costume",
+  );
+  assert.equal(
+    new Set(
+      rankKeys.flatMap((rank) => [
+        npcRankCharacterProfiles[rank].comic.identity,
+        npcRankCharacterProfiles[rank].advisor.identity,
+      ]),
+    ).size,
+    10,
+    "every rank must visibly name its own messenger and advisor",
+  );
+
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  assert.match(
+    source,
+    /riskLevel === "near"[\s\S]*?kind: "comic"[\s\S]*?kind: "advisor"[\s\S]*?: \[[\s\S]*?kind: "comic"[\s\S]*?kind: "advisor"[\s\S]*?kind: "companion"/,
+    "overspend and deficit warnings must render comic, advisor, and companion roles",
+  );
 });
 
 test("open tabs synchronize persisted ledger and treasury changes", async () => {
@@ -580,6 +657,62 @@ test("fiscal scene uses clear customer copy and cannot leave a stretched white f
   assert.doesNotMatch(
     styles,
     /\.treasury-equation\.deficit\s*\{[^}]*linear-gradient\([^)]*#542825[^)]*#241413/s,
+  );
+});
+
+test("mobile pages end in a designed dock instead of a large flat remainder", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const presentationV4 = styles.slice(styles.indexOf("/* Presentation V4"));
+
+  assert.match(source, /className=\{`page-foot-ornament page-foot-\$\{tab\}`\}/);
+  assert.match(presentationV4, /\.prototype-app\s*\{[^}]*min-height:\s*100dvh;/s);
+  assert.match(
+    presentationV4,
+    /\.main-content\s*\{[^}]*display:\s*flex;[^}]*min-height:\s*calc\(100dvh - var\(--topbar-height\)\);[^}]*flex-direction:\s*column;/s,
+  );
+  assert.match(
+    presentationV4,
+    /@media \(max-width:\s*900px\)[\s\S]*?\.app-layout\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;/s,
+  );
+  assert.match(
+    presentationV4,
+    /\.mobile-nav\s*\{[^}]*grid-template-columns:\s*repeat\(5,\s*minmax\(0,\s*1fr\)\);[^}]*border-radius:\s*24px 24px 0 0;/s,
+  );
+  assert.match(
+    presentationV4,
+    /\.mobile-add\s*\{[^}]*position:\s*relative;[^}]*justify-self:\s*center;[^}]*transform:\s*translateY\(-6px\);/s,
+  );
+  assert.match(
+    source,
+    /tabItems\.slice\(0,\s*2\)[\s\S]*?className="mobile-add"[\s\S]*?tabItems\.slice\(2\)/,
+    "the center record action must be third in both visual and keyboard order",
+  );
+  assert.match(
+    presentationV4,
+    /padding-bottom:\s*calc\(var\(--bottom-nav-height\) \+ 24px \+ env\(safe-area-inset-bottom\)\)/,
+  );
+});
+
+test("rank atlas portraits fill their visual column from the shared foot line", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const presentationV4 = styles.slice(styles.indexOf("/* Presentation V4"));
+
+  assert.match(
+    presentationV4,
+    /\.rank-world-visual > \.rank-portrait,[\s\S]*?height:\s*100%;[^}]*align-self:\s*stretch;/s,
+  );
+  assert.match(
+    presentationV4,
+    /\.rank-world-visual > \.rank-portrait > img,[\s\S]*?position:\s*absolute;[^}]*bottom:\s*0;[^}]*left:\s*50%;[^}]*width:\s*auto;[^}]*height:\s*104%;[^}]*max-height:\s*104%;[^}]*transform:\s*translateX\(-50%\);/s,
+  );
+  assert.match(
+    presentationV4,
+    /@media \(max-width:\s*640px\)[\s\S]*?grid-template-columns:\s*142px minmax\(0,\s*1fr\);/,
+  );
+  assert.match(
+    presentationV4,
+    /@media \(max-width:\s*360px\)[\s\S]*?grid-template-columns:\s*116px minmax\(0,\s*1fr\);/,
   );
 });
 
