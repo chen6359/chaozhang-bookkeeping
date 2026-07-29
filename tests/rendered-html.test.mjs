@@ -46,6 +46,10 @@ import {
   npcAssetMoods,
   npcAssetRoutes,
 } from "../lib/characters.ts";
+import {
+  countySceneMediaAssets,
+  getSceneMediaAsset,
+} from "../lib/scene-media.ts";
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -421,13 +425,55 @@ test("five ranks expose four rooms across all three persistent fiscal states", a
     assert.equal(roomNames.size, 4, `${rank.key} should have four distinct rooms`);
   }
   assert.equal(spriteIds.size, 5 * 4 * 3);
-  assert.match(source, /const sceneSprite = getSceneSprite\(rank, room, fiscalState\);/);
+  assert.match(source, /const sceneMedia = getSceneMediaAsset\(rank, room, fiscalState\);/);
   assert.match(source, /data-room=\{room\}/);
   assert.match(source, /data-rank=\{rankConfig\.key\}/);
   assert.match(source, /data-fiscal-state=\{fiscalState\}/);
-  assert.match(source, /backgroundImage: `url\("\$\{sceneSprite\.src\}"\)`/);
-  assert.match(source, /backgroundSize: sceneSprite\.backgroundSize/);
-  assert.match(source, /backgroundPosition: sceneSprite\.backgroundPosition/);
+  assert.match(source, /<SceneMedia[\s\S]*?media=\{sceneMedia\}/);
+});
+
+test("county scenes have 12 real posters and reviewed motion sources", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const component = await readFile(
+    new URL("../components/SceneMedia.tsx", import.meta.url),
+    "utf8",
+  );
+  const entries = Object.values(countySceneMediaAssets);
+
+  assert.equal(entries.length, 4 * 3);
+  assert.equal(new Set(entries.map((entry) => entry.id)).size, 12);
+  assert.equal(new Set(entries.map((entry) => entry.poster)).size, 12);
+  assert.equal(new Set(entries.map((entry) => entry.webm)).size, 12);
+  assert.equal(new Set(entries.map((entry) => entry.mp4)).size, 12);
+  for (const entry of entries) {
+    assert.match(entry.webm ?? "", /\.webm$/);
+    assert.match(entry.mp4 ?? "", /\.mp4$/);
+    await access(new URL(`../public${entry.poster}`, import.meta.url));
+    await access(new URL(`../public${entry.webm}`, import.meta.url));
+    await access(new URL(`../public${entry.mp4}`, import.meta.url));
+  }
+
+  const county = getSceneMediaAsset("county", "hall", "stable");
+  assert.equal(county.poster, "/scenes/county/hall/stable/poster.webp");
+  assert.equal(county.posterBackgroundSize, undefined);
+
+  const prefectureFallback = getSceneMediaAsset(
+    "prefecture",
+    "hall",
+    "stable",
+  );
+  assert.equal(prefectureFallback.poster, "/world-prefecture-rooms.jpg");
+  assert.equal(prefectureFallback.posterBackgroundSize, "300% 400%");
+
+  assert.match(source, /import \{ SceneMedia \} from "\.\.\/components\/SceneMedia"/);
+  assert.match(component, /muted[\s\S]*?loop[\s\S]*?playsInline/);
+  assert.match(component, /preload="metadata"/);
+  assert.match(component, /poster=\{media\.poster\}/);
+  assert.match(component, /prefers-reduced-motion: reduce/);
+  assert.match(component, /new IntersectionObserver/);
+  assert.match(component, /rootMargin: "320px 0px"/);
+  assert.match(component, /video\.pause\(\)/);
+  assert.match(component, /loading=\{eagerPoster \? "eager" : "lazy"\}/);
 });
 
 test("build page combines rank characters, offices, and real room navigation", async () => {
@@ -437,7 +483,7 @@ test("build page combines rank characters, offices, and real room navigation", a
   assert.match(source, /\{rankConfigs\.map\(\(stage, index\) => \{/);
   assert.match(source, /className=\{`rank-world-card \$\{relation\}`\}/);
   assert.match(source, /<RankPortrait[\s\S]*?rank=\{stage\.key\}/);
-  assert.match(source, /getSceneSprite\(stage\.key, "hall", visualState\)/);
+  assert.match(source, /getSceneMediaAsset\(stage\.key, "hall", visualState\)/);
   assert.match(source, /className="rank-room-nav"/);
   assert.match(source, /onClick=\{\(\) => setTab\("home"\)\}>进入大堂/);
   assert.match(source, /onClick=\{\(\) => setTab\("treasury"\)\}>查看库房/);
@@ -816,7 +862,8 @@ test("NPC honorifics follow rank and speaker instead of reusing 大人", () => {
   assert.equal(getCourtAddress("监国", "comic", "大人"), "殿下");
   assert.equal(getCourtAddress("皇帝", "comic", "大人"), "皇上");
   assert.equal(getCourtAddress("皇帝", "advisor", "大人"), "陛下");
-  assert.equal(getCourtAddress("女帝", "comic", "大人"), "陛下");
+  assert.equal(getCourtAddress("女帝", "comic", "大人"), "皇上");
+  assert.equal(getCourtAddress("女帝", "advisor", "大人"), "陛下");
 });
 
 test("council cadence blocks savings from reopening the same daily or weekly meeting", () => {

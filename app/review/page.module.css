@@ -1,0 +1,167 @@
+.page {
+  min-height: 100vh;
+  color: #2a231c;
+  background:
+    radial-gradient(circle at 12% 6%, rgba(176, 55, 41, 0.08), transparent 32rem),
+    linear-gradient(180deg, #f3eadb 0%, #ece0cf 100%);
+  padding: 32px clamp(18px, 4vw, 64px) 80px;
+}
+
+.header {
+  max-width: 1200px;
+  margin: 0 auto 34px;
+  display: grid;
+  gap: 14px;
+}
+
+.header a {
+  width: fit-content;
+  color: #943c31;
+  font-weight: 700;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: clamp(34px, 6vw, 64px);
+  font-family: "STKaiti", "KaiTi", serif;
+}
+
+.header p {
+  max-width: 760px;
+  margin: 0;
+  color: #6f6154;
+  line-height: 1.75;
+}
+
+.section {
+  max-width: 1200px;
+  margin: 0 auto 54px;
+}
+
+.sectionHead {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.sectionHead span {
+  color: #a33d32;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.sectionHead h2 {
+  margin: 0;
+  font-size: clamp(26px, 4vw, 42px);
+}
+
+.sectionHead p {
+  margin: 0;
+  color: #6f6154;
+  line-height: 1.65;
+}
+
+.portraitGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.portraitCard,
+.motionCard {
+  overflow: hidden;
+  background: rgba(255, 252, 246, 0.88);
+  border: 1px solid rgba(127, 91, 58, 0.2);
+  border-radius: 24px;
+  box-shadow: 0 18px 48px rgba(89, 61, 37, 0.1);
+}
+
+.portraitCard img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+}
+
+.cardLabel {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px 18px;
+}
+
+.cardLabel strong {
+  font-size: 18px;
+}
+
+.cardLabel span {
+  color: #76685a;
+  font-size: 14px;
+}
+
+.motionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.motionMedia {
+  display: block;
+  position: relative;
+  inset: auto;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #19140f;
+  pointer-events: auto;
+}
+
+.motionMedia :global(.scene-media-poster),
+.motionMedia :global(.scene-media-video) {
+  object-fit: cover;
+}
+
+.roomGroup {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.roomGroup h3 {
+  margin: 0;
+  font-size: 24px;
+}
+
+@media (max-width: 920px) {
+  .portraitGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .motionGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .page {
+    padding-inline: 14px;
+  }
+
+  .portraitGrid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .portraitCard,
+  .motionCard {
+    border-radius: 18px;
+  }
+
+  .cardLabel {
+    padding: 12px 12px 14px;
+  }
+
+  .cardLabel strong {
+    font-size: 16px;
+  }
+}

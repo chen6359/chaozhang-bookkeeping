@@ -26,6 +26,8 @@ import {
   parseNextCycleReferenceAmount,
 } from "../lib/reference";
 import { getNpcPortraitAsset } from "../lib/characters";
+import { getSceneMediaAsset } from "../lib/scene-media";
+import { SceneMedia } from "../components/SceneMedia";
 import {
   getFiscalStateCopy,
   getNextRank,
@@ -34,7 +36,6 @@ import {
   getRankIndex,
   getRankPortraitAsset,
   getRoomConfig,
-  getSceneSprite,
   rankConfigs,
   type CharacterGender,
   type RankKey,
@@ -856,7 +857,7 @@ function SceneWireframe({
   const vocabulary = getCourtVocabulary(rank);
   const rankConfig = getRankConfig(rank);
   const roomConfig = getRoomConfig(rank, room);
-  const sceneSprite = getSceneSprite(rank, room, fiscalState);
+  const sceneMedia = getSceneMediaAsset(rank, room, fiscalState);
   const stateCopy = getFiscalStateCopy(rank, fiscalState, room);
   const fiscalLabel =
     recovering
@@ -875,14 +876,10 @@ function SceneWireframe({
       data-transition={recovering ? "recovery" : undefined}
       aria-label={`${roomConfig.name}，${fiscalLabel}`}
     >
-      <div
+      <SceneMedia
         className="world-scene-art"
-        aria-hidden="true"
-        style={{
-          backgroundImage: `url("${sceneSprite.src}")`,
-          backgroundSize: sceneSprite.backgroundSize,
-          backgroundPosition: sceneSprite.backgroundPosition,
-        }}
+        media={sceneMedia}
+        eagerPoster={room === "hall"}
       />
       <div className="world-scene-shade" aria-hidden="true" />
       <div className="world-scene-topline">
@@ -2306,7 +2303,7 @@ function AppShell({
               const relation =
                 index === currentRankIndex ? "current" : index < currentRankIndex ? "past" : "future";
               const visualState = relation === "current" ? fiscalState : "stable";
-              const sceneSprite = getSceneSprite(stage.key, "hall", visualState);
+              const sceneMedia = getSceneMediaAsset(stage.key, "hall", visualState);
               const status =
                 relation === "current"
                   ? "当前官阶"
@@ -2327,15 +2324,14 @@ function AppShell({
                       label={`${rankName}人物立绘`}
                     />
                     <div
-                      className={`rank-world-scene rank-theme-${stage.theme} ${visualState}`}
+                      className={`rank-world-scene has-scene-media rank-theme-${stage.theme} ${visualState}`}
                       role="img"
                       aria-label={`${stage.rooms.hall.name}，${relation === "current" ? buildFiscalLabel : status}`}
-                      style={{
-                        backgroundImage: `url("${sceneSprite.src}")`,
-                        backgroundSize: sceneSprite.backgroundSize,
-                        backgroundPosition: sceneSprite.backgroundPosition,
-                      }}
                     >
+                      <SceneMedia
+                        className="rank-world-scene-media"
+                        media={sceneMedia}
+                      />
                       <div className="rank-world-scene-labels">
                         <span>{status}</span>
                         <strong>{stage.rooms.hall.name}</strong>

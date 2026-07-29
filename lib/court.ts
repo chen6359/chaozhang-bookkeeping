@@ -87,7 +87,7 @@ export const getCourtAddress = (
   const resolvedRank = resolveCourtRank(rank);
 
   if (resolvedRank === "emperor") {
-    if (speaker === "comic" && !/女帝/.test(rank ?? "")) return "皇上";
+    if (speaker === "comic") return "皇上";
     return "陛下";
   }
 
