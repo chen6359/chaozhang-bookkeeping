@@ -19,6 +19,7 @@ import { getCourtAddress, getCourtVocabulary } from "../lib/court";
 import {
   getCouncilAvailability,
   getCouncilCadenceLabel,
+  getCouncilPeriodKey,
   type CouncilCadence,
 } from "../lib/council";
 import {
@@ -97,6 +98,7 @@ type PrototypeState = {
   councilRound: number;
   councilCadence: CouncilCadence;
   lastCouncilCompletedAt: string;
+  councilStep: number;
   demoRecoveryDone: boolean;
   nextCycleReferences: Partial<Record<BudgetKey, NextCycleReference>>;
 };
@@ -140,6 +142,17 @@ type RecoveryEvent = {
   after: number;
   finalState: FiscalState;
 };
+
+const councilStageLabels = [
+  "开议",
+  "财政汇报",
+  "异常",
+  "三人谏言",
+  "调阅支出",
+  "调整草案",
+  "政绩结算",
+  "散会备忘",
+] as const;
 
 const realStorageKey = "chaozhang-real-v2";
 const demoStorageKey = "chaozhang-demo-v3";
@@ -185,6 +198,7 @@ const createBlankRealState = (): PrototypeState => ({
   councilRound: 0,
   councilCadence: "weekly",
   lastCouncilCompletedAt: "",
+  councilStep: 0,
   demoRecoveryDone: false,
   nextCycleReferences: {},
 });
@@ -227,6 +241,7 @@ const createDemoState = (): PrototypeState => ({
   councilRound: 0,
   councilCadence: "weekly",
   lastCouncilCompletedAt: "",
+  councilStep: 0,
   demoRecoveryDone: false,
   nextCycleReferences: {},
 });
@@ -271,6 +286,10 @@ const hydratePrototypeState = (candidate: PrototypeState): PrototypeState => {
     lastCouncilCompletedAt:
       candidate.lastCouncilCompletedAt ??
       (candidate.councilDone ? new Date().toISOString() : ""),
+    councilStep:
+      candidate.councilDone
+        ? 0
+        : Math.max(0, Math.min(7, Number(candidate.councilStep) || 0)),
     demoRecoveryDone:
       candidate.demoRecoveryDone ?? legacyRecoveryCompleted,
     nextCycleReferences,
@@ -419,6 +438,44 @@ function NpcPortrait({
       <img src={asset.src} alt="" draggable={false} />
       <span className="sr-only">{name}</span>
     </span>
+  );
+}
+
+function CouncilDialogueCast({
+  cast,
+  rank,
+  presentation,
+}: {
+  cast: FeedbackRole[];
+  rank: string;
+  presentation: string;
+}) {
+  return (
+    <div className={`council-dialogue-cast cast-${cast.length}`} data-testid="council-dialogue-cast">
+      {cast.map((role) => (
+        <article
+          className={`council-dialogue-card council-dialogue-${role.kind}`}
+          data-role-kind={role.kind}
+          data-role-name={role.name}
+          key={`${role.kind}-${role.name}-${role.tone}`}
+        >
+          <div className="council-dialogue-identity">
+            <NpcPortrait
+              kind={role.kind}
+              name={role.name}
+              mood={role.mood ?? "council"}
+              rank={rank}
+              presentation={presentation}
+            />
+            <span className="npc-name">{role.name}</span>
+          </div>
+          <div className="council-dialogue-bubble">
+            <span>{role.tone}</span>
+            <p>“{role.line}”</p>
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -929,8 +986,7 @@ function AppShell({
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [riskOpen, setRiskOpen] = useState(false);
   const [riskDetail, setRiskDetail] = useState(false);
-  const [councilStep, setCouncilStep] = useState(0);
-  const [councilExpenseOpen, setCouncilExpenseOpen] = useState(false);
+  const [isFinishingCouncil, setIsFinishingCouncil] = useState(false);
   const [promotionOpen, setPromotionOpen] = useState(false);
   const [rankAtlasOpen, setRankAtlasOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -950,6 +1006,11 @@ function AppShell({
   const [referenceAmountInput, setReferenceAmountInput] = useState("");
   const [referenceError, setReferenceError] = useState("");
   const [referenceNotice, setReferenceNotice] = useState("");
+  const councilStep = Math.max(0, Math.min(7, Number(state.councilStep) || 0));
+  const setCouncilStep = (step: number) => {
+    const nextStep = Math.max(0, Math.min(7, step));
+    setState((current) => ({ ...current, councilStep: nextStep }));
+  };
 
   useEffect(() => {
     if (state.profile.onboarded) {
@@ -1075,8 +1136,20 @@ function AppShell({
     }
     return visible.sort((a, b) => b.amount - a.amount).slice(0, 3);
   }, [leadingCategory.key, leadingCategory.used, state.ledger]);
+  const councilExpenseEntries = useMemo(
+    () =>
+      state.ledger
+        .filter(
+          (item) =>
+            item.type === "支出" &&
+            normalizeExpenseCategory(item.category) === leadingCategory.key,
+        )
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 3),
+    [leadingCategory.key, state.ledger],
+  );
   const hasCategoryAlert = leadingCategory.percent >= 90;
-  const hasRisk = overspend > 0 || (state.riskTriggered && hasCategoryAlert);
+  const hasRisk = overspend > 0 || hasCategoryAlert;
   const riskLevel: "near" | "overspent" | "deficit" =
     treasuryBalance < 0 ? "deficit" : overspend > 0 ? "overspent" : "near";
   const courtAddress = getCourtAddress(
@@ -1105,7 +1178,9 @@ function AppShell({
     characterGender,
   );
   const currentRiskTitle =
-    riskLevel === "deficit"
+    !hasRisk
+      ? "本周期未见明显异常"
+      : riskLevel === "deficit"
       ? `${courtVocabulary.treasury}告急，${courtVocabulary.residence}陈设待典`
       : riskLevel === "overspent"
         ? "本周期消费预算已经超支"
@@ -1113,7 +1188,9 @@ function AppShell({
           ? "有一笔支出还未归类"
           : `${leadingCategory.bureau}用度告急`;
   const currentRiskFact =
-    riskLevel === "deficit"
+    !hasRisk
+      ? `本周期支出 ${formatMoney(expenseTotal)}，没有超过消费池；目前金额最高的分类是${leadingCategory.key}，使用进度为${leadingCategory.percent}%`
+      : riskLevel === "deficit"
       ? `本周期支出 ${formatMoney(expenseTotal)}，超过消费池 ${formatMoney(overspend)}；${courtVocabulary.treasury}账面 ${formatMoney(treasuryBalance)}`
       : riskLevel === "overspent"
         ? `本周期支出 ${formatMoney(expenseTotal)}，超过消费池 ${formatMoney(overspend)}；${courtVocabulary.treasury}账面剩余 ${formatMoney(treasuryBalance)}`
@@ -1121,7 +1198,7 @@ function AppShell({
           ? `待分类支出 ${formatMoney(leadingCategory.used)} 已计入本周期总支出；消费池仍余 ${formatMoney(remaining)}`
           : `${leadingCategory.key}已用 ${formatMoney(leadingCategory.used)} / ${formatMoney(leadingCategory.limit)}（${leadingCategory.percent}%）；消费池仍余 ${formatMoney(remaining)}`;
   const currentRiskMood: NpcMood =
-    riskLevel === "deficit" ? "alarm" : "warning";
+    !hasRisk ? "neutral" : riskLevel === "deficit" ? "alarm" : "warning";
   const currentReference =
     isBudgetKey(leadingCategory.key)
       ? state.nextCycleReferences[leadingCategory.key]
@@ -1133,7 +1210,34 @@ function AppShell({
     lastLedgerCount: state.councilLedgerCount,
   });
   const currentRiskCast: FeedbackRole[] =
-    riskLevel === "near"
+    !hasRisk
+      ? [
+          {
+            mark: "策",
+            kind: "advisor",
+            name: courtRoles.advisor,
+            tone: "平稳呈报",
+            mood: "neutral",
+            line: `本周期没有明显超支。${leadingCategory.key}目前使用${leadingCategory.percent}%，可以照常记录，并留意金额最高的几笔。`,
+          },
+          {
+            mark: "喜",
+            kind: "comic",
+            name: courtRoles.comic,
+            tone: "报平安",
+            mood: "success",
+            line: `${comicAddress}，账房今日没有敲警钟！小的还是把最高的几笔账都备好了，随时可以查。`,
+          },
+          {
+            mark: "安",
+            kind: "companion",
+            name: courtRoles.companion,
+            tone: "陪你复盘",
+            mood: "success",
+            line: "没有异常也值得回看。知道钱花得稳，和知道哪里需要调整一样重要。",
+          },
+        ]
+      : riskLevel === "near"
       ? [
           {
             mark: "急",
@@ -1193,14 +1297,38 @@ function AppShell({
                 : "现在发现正好。先看清是哪几笔把节奏带快了，下个周期再给这一处留出余地。",
           },
         ];
-  const bookkeepingScore = Math.min(
-    25,
-    state.ledger.filter((item) => item.type === "支出").length * 5,
+  const councilTrioCast: FeedbackRole[] =
+    currentRiskCast.length === 3
+      ? currentRiskCast
+      : [
+          ...currentRiskCast,
+          {
+            mark: "安",
+            kind: "companion",
+            name: courtRoles.companion,
+            tone: "宽慰",
+            mood: currentRiskMood,
+            line: `现在看见这笔变化正好。先把${leadingCategory.key}的主要支出看清楚，再决定下周期是否调整，不必急着责备自己。`,
+          },
+        ];
+  const newLedgerCount = Math.max(
+    0,
+    state.ledger.length - state.councilLedgerCount,
   );
-  const budgetScore = treasuryBalance < 0 ? 5 : overspend > 0 ? 12 : 20;
+  const newLedgerItems = state.ledger.slice(0, newLedgerCount);
+  const bookkeepingScore = Math.min(25, newLedgerCount * 5);
+  const budgetScore = state.councilDecision ? 20 : 0;
   const councilScore = 25;
-  const savingsScore = state.ledger.some((item) => item.type === "储蓄") ? 10 : 0;
-  const weeklyMerit = bookkeepingScore + budgetScore + councilScore + savingsScore;
+  const savingsScore = newLedgerItems.some((item) => item.type === "储蓄") ? 10 : 0;
+  const councilMeritTotal =
+    bookkeepingScore + budgetScore + councilScore + savingsScore;
+  const lastCouncilDate = new Date(state.lastCouncilCompletedAt);
+  const meritAlreadyAwardedThisWeek =
+    Boolean(state.lastCouncilCompletedAt) &&
+    !Number.isNaN(lastCouncilDate.getTime()) &&
+    getCouncilPeriodKey(lastCouncilDate, "weekly") ===
+      getCouncilPeriodKey(new Date(), "weekly");
+  const weeklyMerit = meritAlreadyAwardedThisWeek ? 0 : councilMeritTotal;
 
   const guideStep = getDemoGuideStep({
     triggerAdded: demoTriggerAdded,
@@ -1669,7 +1797,8 @@ function AppShell({
   };
 
   const finishCouncil = () => {
-    if (state.councilDone) return;
+    if (state.councilDone || isFinishingCouncil) return;
+    setIsFinishingCouncil(true);
     const gender = getCharacterGender(state.profile.presentation);
     const nextMerit = Math.min(999, state.profile.merit + weeklyMerit);
     const nextRank = getRankForMerit(nextMerit, gender);
@@ -1685,6 +1814,7 @@ function AppShell({
       councilLedgerCount: current.ledger.length,
       councilRound: (current.councilRound ?? 0) + 1,
       lastCouncilCompletedAt: new Date().toISOString(),
+      councilStep: 0,
       profile: {
         ...current.profile,
         rank: nextRank,
@@ -1696,8 +1826,6 @@ function AppShell({
       setPreviewRank(getRankConfig(nextRank).key);
       setPromotionOpen(true);
     }
-    setCouncilStep(0);
-    setCouncilExpenseOpen(false);
   };
 
   const renderHome = () => {
@@ -2043,17 +2171,33 @@ function AppShell({
           {councilScene}
           <section className="council-stage">
             <div className="council-content">
-              <NpcPortrait
-                compact
-                kind="advisor"
-                name={courtRoles.advisor}
-                mood="success"
+              <CouncilDialogueCast
+                cast={[
+                  {
+                    mark: "安",
+                    kind: "companion",
+                    name: courtRoles.companion,
+                    tone: "散会备忘",
+                    mood: "success",
+                    line: "账已经看明白了，接下来照常记录就好。下次议事再看看这份调整是否合适。",
+                  },
+                  {
+                    mark: "策",
+                    kind: "advisor",
+                    name: courtRoles.advisor,
+                    tone: "留档",
+                    mood: "success",
+                    line: `本次决议已经记入${courtRoles.council}备忘，当前账目不会被自动改写。`,
+                  },
+                ]}
                 rank={state.profile.rank}
                 presentation={state.profile.presentation}
               />
-              <p className="eyebrow">最近一次议事备忘</p>
-              <h2>{state.councilDecision || "本次未保留下周期行动草案"}</h2>
-              <p>本次政绩已经入账，议事备忘会保留供你回看。</p>
+              <div className="council-section-heading">
+                <p className="eyebrow">最近一次议事备忘</p>
+                <h2>{state.councilDecision || "本次未保留下周期行动草案"}</h2>
+                <p>本次政绩已经入账，议事备忘会保留供你回看。</p>
+              </div>
               <div className="report-grid">
                 <div><span>累计政绩</span><strong>{state.profile.merit}</strong></div>
                 <div><span>当前官阶</span><strong>{currentRankName}</strong></div>
@@ -2069,9 +2213,9 @@ function AppShell({
                         ...current,
                         councilDone: false,
                         councilDecision: "",
+                        councilStep: 0,
                       }));
-                      setCouncilStep(0);
-                      setCouncilExpenseOpen(false);
+                      setIsFinishingCouncil(false);
                     }}
                   >
                     开启{councilAvailability.periodLabel}议事
@@ -2107,82 +2251,199 @@ function AppShell({
         </section>
         {councilScene}
         <section className="council-stage">
-          <div className="council-steps">
-            {["开议", "财政汇报", "核心议题", "政绩结算"].map((label, index) => (
-              <span className={index <= councilStep ? "active" : ""} key={label}>{index + 1}. {label}</span>
+          <div className="council-steps" aria-label="朝会议程">
+            {councilStageLabels.map((label, index) => (
+              <span
+                className={index === councilStep ? "active" : index < councilStep ? "done" : ""}
+                aria-current={index === councilStep ? "step" : undefined}
+                key={label}
+              >
+                {index + 1}. {label}
+              </span>
             ))}
           </div>
           {councilStep === 0 && (
             <div className="council-content">
-              <NpcPortrait
-                compact
-                kind="advisor"
-                name={courtRoles.advisor}
-                mood="council"
+              <CouncilDialogueCast
+                cast={[
+                  {
+                    mark: "策",
+                    kind: "advisor",
+                    name: courtRoles.advisor,
+                    tone: "请议",
+                    mood: "council",
+                    line: `${courtAddress}，本周期${state.ledger.length}笔账已经封册。若无异议，现在便升堂核账。`,
+                  },
+                ]}
                 rank={state.profile.rank}
                 presentation={state.profile.presentation}
               />
-              <p className="eyebrow">{courtRoles.advisor}主持</p>
-              <h2>当前账本已经核清，请{courtAddress}自主开议</h2>
-              <p>{councilAvailability.periodLabel}只能完成一次；新增消费或储蓄不会提前重置。</p>
+              <div className="council-section-heading">
+                <p className="eyebrow">{courtRoles.advisor}主持</p>
+                <h2>账册已备，请开启本次议事</h2>
+                <p>{councilAvailability.periodLabel}只能完成一次；新增消费或储蓄不会提前重置。</p>
+              </div>
               <button className="primary-button" onClick={() => setCouncilStep(1)} data-testid="start-council">
-                开启本次朝会
+                升堂核账
               </button>
             </div>
           )}
           {councilStep === 1 && (
             <div className="council-content">
-              <NpcPortrait
-                compact
-                kind="advisor"
-                name={courtRoles.advisor}
-                mood="council"
+              <CouncilDialogueCast
+                cast={[
+                  {
+                    mark: "策",
+                    kind: "advisor",
+                    name: courtRoles.advisor,
+                    tone: "财政汇报",
+                    mood: "council",
+                    line: `本周期共记录支出${formatMoney(expenseTotal)}，消费池为${formatMoney(state.profile.disposable)}，${courtVocabulary.treasury}账面为${formatMoney(treasuryBalance)}。`,
+                  },
+                ]}
                 rank={state.profile.rank}
                 presentation={state.profile.presentation}
               />
-              <p className="eyebrow">{courtRoles.advisor}呈报 · 本次账情</p>
-              <h2>本周期已记录支出 {formatMoney(expenseTotal)}</h2>
+              <div className="council-section-heading">
+                <p className="eyebrow">{courtRoles.advisor}呈报 · 本次账情</p>
+                <h2>本周期已记录支出 {formatMoney(expenseTotal)}</h2>
+              </div>
               <div className="report-grid">
                 <div><span>消费池</span><strong>{formatMoney(state.profile.disposable)}</strong></div>
                 <div><span>总支出</span><strong>{formatMoney(expenseTotal)}</strong></div>
                 <div><span>{courtVocabulary.treasury}账面</span><strong className={treasuryBalance < 0 ? "negative-text" : ""}>{formatMoney(treasuryBalance)}</strong></div>
               </div>
-              <p className="quote-line">{courtRoles.advisor}：“{leadingCategory.key}预算已使用{leadingCategory.percent}%；消费池差额为{formatMoney(remaining)}。建议先从金额最高的几笔查起。”</p>
-              <button className="primary-button" onClick={() => setCouncilStep(2)}>查看核心议题</button>
+              <button className="primary-button" onClick={() => setCouncilStep(2)}>查看本期异常</button>
             </div>
           )}
           {councilStep === 2 && (
             <div className="council-content">
-              <NpcPortrait
-                compact
-                kind="companion"
-                name={courtRoles.companion}
-                mood="council"
+              <CouncilDialogueCast
+                cast={[currentRiskCast[0]]}
                 rank={state.profile.rank}
                 presentation={state.profile.presentation}
               />
-              <p className="eyebrow">只处理一个最重要的问题</p>
-              <h2>下周期想怎样处理{leadingCategory.key}节奏？</h2>
-              <p>你的选择会写入本次议事备忘，供下次奏报回看。</p>
+              <div className="council-section-heading">
+                <p className="eyebrow">
+                  {hasRisk ? "本周期最需要留意的一项" : "本周期账情平稳"}
+                </p>
+                <h2>{currentRiskTitle}</h2>
+                <p>{currentRiskFact}</p>
+              </div>
+              <div className="report-grid">
+                <div>
+                  <span>{leadingCategory.key === "其他" ? "分类状态" : `${leadingCategory.key}额度`}</span>
+                  <strong>
+                    {leadingCategory.key === "其他"
+                      ? "待补充"
+                      : formatMoney(leadingCategory.limit)}
+                  </strong>
+                </div>
+                <div><span>本期已用</span><strong>{formatMoney(leadingCategory.used)}</strong></div>
+                <div><span>使用进度</span><strong>{leadingCategory.percent}%</strong></div>
+              </div>
+              <button className="primary-button" onClick={() => setCouncilStep(3)}>
+                {hasRisk ? "召集三人谏言" : "听取三人复盘"}
+              </button>
+            </div>
+          )}
+          {councilStep === 3 && (
+            <div className="council-content">
+              <CouncilDialogueCast
+                cast={councilTrioCast}
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
+              <div className="council-section-heading">
+                <p className="eyebrow">急报 · 谏言 · 宽慰</p>
+                <h2>三人已经把问题、数字和下一步说清</h2>
+              </div>
+              <button className="primary-button" onClick={() => setCouncilStep(4)}>调阅三笔主要支出</button>
+            </div>
+          )}
+          {councilStep === 4 && (
+            <div className="council-content">
+              <CouncilDialogueCast
+                cast={[
+                  {
+                    mark: "策",
+                    kind: "advisor",
+                    name: courtRoles.advisor,
+                    tone: "调阅支出",
+                    mood: "council",
+                    line: `${leadingCategory.key}支出中，金额最高的三笔已经列在下方。若发现误记，可以直接修改。`,
+                  },
+                ]}
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
+              <div className="council-section-heading">
+                <p className="eyebrow">真实账目 · 可修改</p>
+                <h2>{leadingCategory.key}三笔主要支出</h2>
+              </div>
+              <div className="council-expense-ledger" data-testid="council-expense-list">
+                {riskItems.length > 0 ? (
+                  riskItems.map((item) => {
+                    const matchingEntry = councilExpenseEntries.find(
+                      (entry) => entry.note === item.label && entry.amount === item.amount,
+                    );
+                    return (
+                      <article key={`${item.label}-${item.amount}`}>
+                        <div>
+                          <strong>{item.label}</strong>
+                          <span>{matchingEntry ? `${matchingEntry.date} · ${matchingEntry.category}` : `${leadingCategory.key}汇总`}</span>
+                        </div>
+                        <b>{formatMoney(item.amount)}</b>
+                        {matchingEntry ? (
+                          <button className="outline-button" onClick={() => editItem(matchingEntry)}>修改</button>
+                        ) : (
+                          <span className="ledger-summary-label">账簿汇总</span>
+                        )}
+                      </article>
+                    );
+                  })
+                ) : (
+                  <div className="empty-state">
+                    <strong>当前没有可调阅的{leadingCategory.key}流水</strong>
+                    <span>可以先回到账簿补记或修正分类。</span>
+                  </div>
+                )}
+              </div>
+              <button className="primary-button" onClick={() => setCouncilStep(5)}>生成调整草案</button>
+            </div>
+          )}
+          {councilStep === 5 && (
+            <div className="council-content">
+              <CouncilDialogueCast
+                cast={[
+                  {
+                    mark: "策",
+                    kind: "advisor",
+                    name: courtRoles.advisor,
+                    tone: "拟定草案",
+                    mood: "council",
+                    line: `本期${leadingCategory.key}额度${formatMoney(leadingCategory.limit)}、实际使用${formatMoney(leadingCategory.used)}。草案只供下周期参考，不会改写本期账目。`,
+                  },
+                  {
+                    mark: "安",
+                    kind: "companion",
+                    name: courtRoles.companion,
+                    tone: "陪你决定",
+                    mood: "council",
+                    line: "可以先设置一个参考额度，也可以保持现状继续观察。你的选择之后仍能修改。",
+                  },
+                ]}
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
+              <div className="council-section-heading">
+                <p className="eyebrow">只影响下周期参考</p>
+                <h2>为{leadingCategory.key}留下一个可执行的调整草案</h2>
+              </div>
               <div className="decision-list">
-                <button
-                  className={state.councilDecision === `先查看三笔主要${leadingCategory.key}支出` ? "selected" : ""}
-                  onClick={() => {
-                    setReferenceNotice("");
-                    setCouncilExpenseOpen((open) => !open);
-                    setState((current) => ({
-                      ...current,
-                      councilDecision: `先查看三笔主要${leadingCategory.key}支出`,
-                    }));
-                  }}
-                >
-                  <span>先查看三笔主要{leadingCategory.key}支出</span>
-                  <b>{councilExpenseOpen ? "收起" : "查看"}</b>
-                </button>
                 <button
                   className={state.councilDecision.startsWith(`下周期${leadingCategory.key}参考额度`) ? "selected" : ""}
                   onClick={() => {
-                    setCouncilExpenseOpen(false);
                     openReferenceEditor("council");
                   }}
                   data-testid="open-council-reference-editor"
@@ -2194,11 +2455,25 @@ function AppShell({
                   </span>
                   <b>{currentReference ? "已保存" : isBudgetKey(leadingCategory.key) ? "设置" : "补充分类"}</b>
                 </button>
+                {isBudgetKey(leadingCategory.key) && (
+                  <button
+                    className={state.councilDecision === `下周期${leadingCategory.key}先沿用本期额度 ${formatMoney(leadingCategory.limit)}` ? "selected" : ""}
+                    onClick={() => {
+                      setReferenceNotice("");
+                      setState((current) => ({
+                        ...current,
+                        councilDecision: `下周期${leadingCategory.key}先沿用本期额度 ${formatMoney(leadingCategory.limit)}`,
+                      }));
+                    }}
+                  >
+                    <span>先沿用本期{leadingCategory.key}额度</span>
+                    <b>{formatMoney(leadingCategory.limit)}</b>
+                  </button>
+                )}
                 <button
                   className={state.councilDecision === "维持现状，继续观察" ? "selected" : ""}
                   onClick={() => {
                     setReferenceNotice("");
-                    setCouncilExpenseOpen(false);
                     setState((current) => ({ ...current, councilDecision: "维持现状，继续观察" }));
                   }}
                 >
@@ -2206,51 +2481,112 @@ function AppShell({
                   <b>{state.councilDecision === "维持现状，继续观察" ? "已选择" : "选择"}</b>
                 </button>
               </div>
-              {councilExpenseOpen && (
-                <div className="risk-detail-list council-expense-list" data-testid="council-expense-list">
-                  {riskItems.length > 0 ? (
-                    riskItems.map((item) => (
-                      <div key={`${item.label}-${item.amount}`}>
-                        <span>{item.label}</span>
-                        <strong>{formatMoney(item.amount)}</strong>
-                      </div>
-                    ))
-                  ) : (
-                    <div>
-                      <span>当前分类暂无可展示流水</span>
-                      <strong>{formatMoney(0)}</strong>
-                    </div>
-                  )}
-                </div>
-              )}
               {referenceNotice && <div className="warning-box" role="status">{referenceNotice}</div>}
               {renderCurrentReferenceCard("council")}
-              <button className="primary-button" disabled={!state.councilDecision} onClick={() => setCouncilStep(3)}>
-                确认本次议事
+              <button className="primary-button" disabled={!state.councilDecision} onClick={() => setCouncilStep(6)}>
+                确认草案，进入结算
               </button>
             </div>
           )}
-          {councilStep === 3 && (
+          {councilStep === 6 && (
             <div className="council-content">
-              <NpcPortrait
-                compact
-                kind="comic"
-                name={courtRoles.comic}
-                mood="success"
+              <CouncilDialogueCast
+                cast={[
+                  {
+                    mark: "策",
+                    kind: "advisor",
+                    name: courtRoles.advisor,
+                    tone: "结算",
+                    mood: "success",
+                    line: meritAlreadyAwardedThisWeek
+                      ? `本次议事已经完成，但本周政绩已结算过。备忘仍会保留，不会重复加分。`
+                      : `本周期新增${newLedgerCount}笔账，完成一次议事，本次可获得${weeklyMerit}点政绩。`,
+                  },
+                  {
+                    mark: "喜",
+                    kind: "comic",
+                    name: courtRoles.comic,
+                    tone: "报喜",
+                    mood: "success",
+                    line: `${comicAddress}，账也核了、主意也定了，这回的政绩小的已经算得明明白白！`,
+                  },
+                ]}
                 rank={state.profile.rank}
                 presentation={state.profile.presentation}
               />
-              <p className="eyebrow">本次最高80点</p>
-              <h2>政绩结算</h2>
+              <div className="council-section-heading">
+                <p className="eyebrow">本次最高80点</p>
+                <h2>政绩结算</h2>
+                {meritAlreadyAwardedThisWeek && (
+                  <p>每日朝会可以继续复盘，但同一自然周只结算一次政绩，防止重复刷分。</p>
+                )}
+              </div>
               <div className="merit-breakdown">
                 <div><span>账本秩序</span><strong>{bookkeepingScore} / 25</strong></div>
                 <div><span>预算治理</span><strong>{budgetScore} / 20</strong></div>
                 <div><span>完成议事</span><strong>{councilScore} / 25</strong></div>
                 <div><span>储蓄习惯</span><strong>{savingsScore} / 10</strong></div>
               </div>
-              <div className="total-merit"><span>本次政绩</span><strong>{weeklyMerit} / 80</strong></div>
-              <button className="primary-button" onClick={finishCouncil} data-testid="finish-council">
-                结算并查看晋升
+              <div className="total-merit">
+                <span>{meritAlreadyAwardedThisWeek ? "本次入账政绩" : "本次政绩"}</span>
+                <strong>{weeklyMerit} / 80</strong>
+              </div>
+              <button className="primary-button" onClick={() => setCouncilStep(7)}>
+                生成散会备忘
+              </button>
+            </div>
+          )}
+          {councilStep === 7 && (
+            <div className="council-content">
+              <CouncilDialogueCast
+                cast={[
+                  {
+                    mark: "安",
+                    kind: "companion",
+                    name: courtRoles.companion,
+                    tone: "散会",
+                    mood: "success",
+                    line: "账已经看明白了，接下来照常记录就好。下次议事再回来看看这份调整是否合适。",
+                  },
+                  {
+                    mark: "策",
+                    kind: "advisor",
+                    name: courtRoles.advisor,
+                    tone: "备忘",
+                    mood: "success",
+                    line: `本次决定为：“${state.councilDecision || "维持现状，继续观察"}”。散会后将写入账本备忘。`,
+                  },
+                ]}
+                rank={state.profile.rank}
+                presentation={state.profile.presentation}
+              />
+              <div className="council-section-heading">
+                <p className="eyebrow">本次议事备忘</p>
+                <h2>{state.councilDecision || "维持现状，继续观察"}</h2>
+                <p>
+                  完成后将锁定本周期朝会
+                  {weeklyMerit > 0
+                    ? `，并把${weeklyMerit}点政绩写入当前官阶。`
+                    : "；本周政绩已结算，本次不会重复加分。"}
+                </p>
+              </div>
+              <div className="report-grid">
+                <div><span>本周期账目</span><strong>{state.ledger.length} 笔</strong></div>
+                <div><span>本次政绩</span><strong>+{weeklyMerit}</strong></div>
+                <div><span>朝会频率</span><strong>{getCouncilCadenceLabel(state.councilCadence)}</strong></div>
+              </div>
+              <button
+                className="primary-button"
+                disabled={isFinishingCouncil}
+                onClick={() => {
+                  finishCouncil();
+                  goToTab("home");
+                }}
+                data-testid="finish-council"
+              >
+                {isFinishingCouncil
+                  ? "正在结算…"
+                  : `散会并返回${courtVocabulary.residence}`}
               </button>
             </div>
           )}
@@ -2950,6 +3286,7 @@ function AppShell({
                     setPreviewRoom("hall");
                     setPreviewFiscalState("stable");
                     setRankAtlasOpen(false);
+                    setIsFinishingCouncil(false);
                     setSettingsOpen(false);
                     setTab("home");
                   }}

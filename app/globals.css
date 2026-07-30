@@ -6129,3 +6129,314 @@ textarea:focus {
     font-size: 12px;
   }
 }
+
+/* The approved visual-novel council is part of the real workflow.
+   Characters and their own lines stay paired while all eight stages remain visible. */
+.council-stage {
+  border: 1px solid rgba(134, 91, 48, 0.2);
+  border-radius: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 245, 0.94), rgba(247, 238, 224, 0.9)),
+    url("/previews/background/B-council.png") center / cover no-repeat;
+}
+
+.council-steps {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(102px, 1fr));
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(125, 91, 52, 0.16);
+  background: rgba(255, 251, 244, 0.82);
+  scrollbar-width: thin;
+}
+
+.council-steps span {
+  display: grid;
+  min-height: 54px;
+  place-items: center;
+  border-right: 1px solid rgba(125, 91, 52, 0.12);
+  padding: 9px 8px;
+  color: #8b7a68;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.council-steps span.done {
+  background: rgba(40, 120, 102, 0.08);
+  color: #327363;
+}
+
+.council-steps span.active {
+  background: linear-gradient(135deg, #a84638, #7f302b);
+  color: #fff9ec;
+  box-shadow: inset 0 -4px 0 rgba(246, 208, 130, 0.48);
+}
+
+.council-content {
+  width: min(100%, 1120px);
+  min-height: 520px;
+  align-content: center;
+  justify-items: stretch;
+  gap: 22px;
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 54px);
+  text-align: left;
+}
+
+.council-content > .primary-button,
+.council-content > .secondary-button {
+  justify-self: center;
+}
+
+.council-section-heading {
+  display: grid;
+  max-width: 780px;
+  justify-self: center;
+  gap: 7px;
+  text-align: center;
+}
+
+.council-section-heading h2,
+.council-section-heading p {
+  margin: 0;
+}
+
+.council-dialogue-cast {
+  display: grid;
+  width: 100%;
+  gap: 18px;
+}
+
+.council-dialogue-cast.cast-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.council-dialogue-cast.cast-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.council-dialogue-card {
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 264px minmax(132px, auto);
+  overflow: visible;
+  border: 1px solid rgba(140, 100, 58, 0.18);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 50% 25%, rgba(230, 195, 129, 0.18), transparent 13rem),
+    rgba(255, 252, 245, 0.88);
+  box-shadow: 0 16px 38px rgba(72, 49, 27, 0.08);
+}
+
+.council-dialogue-cast.cast-1 .council-dialogue-card {
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  grid-template-rows: minmax(280px, auto);
+}
+
+.council-dialogue-identity {
+  display: grid;
+  position: relative;
+  min-width: 0;
+  align-items: end;
+  justify-items: center;
+  overflow: visible;
+  padding: 12px 10px 0;
+}
+
+.council-dialogue-identity > .npc-portrait {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.council-dialogue-identity > .npc-portrait > img {
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.council-dialogue-identity > .npc-name {
+  position: absolute;
+  z-index: 2;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 999px;
+  background: rgba(55, 47, 39, 0.88);
+  padding: 7px 14px;
+  color: #fff9ed;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(42, 32, 22, 0.16);
+}
+
+.council-dialogue-bubble {
+  display: grid;
+  position: relative;
+  align-content: center;
+  gap: 8px;
+  border-top: 1px solid rgba(140, 100, 58, 0.16);
+  background: rgba(255, 253, 248, 0.94);
+  padding: 20px;
+}
+
+.council-dialogue-cast.cast-1 .council-dialogue-bubble {
+  border-top: 0;
+  border-left: 1px solid rgba(140, 100, 58, 0.16);
+  border-radius: 0 24px 24px 0;
+}
+
+.council-dialogue-bubble > span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.council-dialogue-bubble > p {
+  margin: 0;
+  color: #3c332a;
+  font-size: clamp(16px, 1.6vw, 21px);
+  line-height: 1.65;
+}
+
+.council-expense-ledger {
+  display: grid;
+  width: min(100%, 820px);
+  justify-self: center;
+  gap: 10px;
+}
+
+.council-expense-ledger article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid rgba(133, 97, 58, 0.2);
+  border-radius: 17px;
+  background: rgba(255, 253, 248, 0.92);
+  padding: 14px 16px;
+}
+
+.council-expense-ledger article > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.council-expense-ledger article > div > strong,
+.council-expense-ledger article > div > span {
+  overflow-wrap: anywhere;
+}
+
+.council-expense-ledger article > div > span,
+.ledger-summary-label {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.council-expense-ledger article > b {
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .council-stage {
+    border-radius: 22px;
+  }
+
+  .council-steps {
+    grid-template-columns: repeat(8, minmax(112px, 1fr));
+  }
+
+  .council-content {
+    min-height: 0;
+    gap: 17px;
+    padding: 20px 14px 24px;
+  }
+
+  .council-dialogue-cast.cast-2,
+  .council-dialogue-cast.cast-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .council-dialogue-card,
+  .council-dialogue-cast.cast-1 .council-dialogue-card {
+    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-rows: minmax(188px, auto);
+    border-radius: 20px;
+  }
+
+  .council-dialogue-identity {
+    min-height: 188px;
+    padding: 8px 0 0;
+  }
+
+  .council-dialogue-identity > .npc-name {
+    bottom: 8px;
+    max-width: calc(100% - 10px);
+    padding: 5px 9px;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+
+  .council-dialogue-bubble,
+  .council-dialogue-cast.cast-1 .council-dialogue-bubble {
+    border-top: 0;
+    border-left: 1px solid rgba(140, 100, 58, 0.16);
+    border-radius: 0 20px 20px 0;
+    padding: 15px;
+  }
+
+  .council-dialogue-bubble > p {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .council-expense-ledger article {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 13px;
+  }
+
+  .council-expense-ledger article > .outline-button,
+  .council-expense-ledger article > .ledger-summary-label {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    text-align: center;
+  }
+}
+
+@media (max-width: 460px) {
+  .financial-summary,
+  .report-grid,
+  .risk-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .financial-summary > div,
+  .report-grid > div,
+  .risk-facts > div {
+    min-width: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 13px 14px;
+  }
+
+  .financial-summary > div:last-child,
+  .report-grid > div:last-child,
+  .risk-facts > div:last-child {
+    border-bottom: 0;
+  }
+
+  .financial-summary strong,
+  .report-grid strong,
+  .risk-facts strong {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+}

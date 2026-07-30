@@ -570,6 +570,41 @@ test("review page presents the complete eight-stage game council", async () => {
   assert.match(styles, /@media \(max-width:\s*520px\)[\s\S]*?\.councilGrid\s*\{[^}]*grid-template-columns:\s*1fr;/s);
 });
 
+test("the real council runs the approved eight stages with persisted progress and real actions", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  for (const title of [
+    "开议",
+    "财政汇报",
+    "异常",
+    "三人谏言",
+    "调阅支出",
+    "调整草案",
+    "政绩结算",
+    "散会备忘",
+  ]) {
+    assert.match(source, new RegExp(`"${title}"`));
+  }
+  for (let step = 0; step < 8; step += 1) {
+    assert.match(source, new RegExp(`councilStep === ${step}`));
+  }
+  assert.match(source, /councilStep:\s*number;/);
+  assert.match(source, /candidate\.councilDone[\s\S]*?Math\.max\(0,\s*Math\.min\(7,\s*Number\(candidate\.councilStep\)/);
+  assert.match(source, /data-testid="council-dialogue-cast"/);
+  assert.match(source, /onClick=\{\(\) => editItem\(matchingEntry\)\}>修改<\/button>/);
+  assert.match(source, /data-testid="open-council-reference-editor"/);
+  assert.match(source, /data-testid="finish-council"/);
+  assert.match(source, /!hasRisk\s*\?\s*"本周期未见明显异常"/);
+  assert.match(source, /getCouncilPeriodKey\(lastCouncilDate,\s*"weekly"\)/);
+  assert.match(source, /const weeklyMerit = meritAlreadyAwardedThisWeek \? 0 : councilMeritTotal;/);
+  assert.match(styles, /\.council-steps\s*\{[^}]*grid-template-columns:\s*repeat\(8,/s);
+  assert.match(
+    styles,
+    /@media \(max-width:\s*760px\)[\s\S]*?\.council-dialogue-cast\.cast-3\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+  );
+});
+
 test("mobile quick facts wrap oversized treasury amounts instead of overlapping", async () => {
   const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -630,7 +665,8 @@ test("rank-aware NPCs use standalone role, rank, and event-mood assets", async (
   assert.match(source, /data-role-name=\{role\.name\}/);
   assert.match(source, /riskLevel === "deficit" \? "alarm" : "warning"/);
   assert.match(source, /mood=\{role\.mood\}/);
-  assert.match(source, /mood="council"/);
+  assert.match(source, /mood=\{role\.mood \?\? "council"\}/);
+  assert.match(source, /mood:\s*"council"/);
   assert.match(source, /didRecover \|\| recoveryCompleted \? "recovery" : "success"/);
   assert.match(source, /const asset = getNpcPortraitAsset\(/);
   assert.match(source, /<img src=\{asset\.src\} alt="" draggable=\{false\} \/>/);
