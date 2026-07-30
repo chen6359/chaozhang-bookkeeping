@@ -69,13 +69,197 @@
   gap: 18px;
 }
 
+.councilGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
 .portraitCard,
-.motionCard {
+.motionCard,
+.councilCard {
   overflow: hidden;
   background: rgba(255, 252, 246, 0.88);
   border: 1px solid rgba(127, 91, 58, 0.2);
   border-radius: 24px;
   box-shadow: 0 18px 48px rgba(89, 61, 37, 0.1);
+}
+
+.councilCard {
+  display: grid;
+  min-height: 620px;
+  grid-template-rows: minmax(300px, 0.54fr) minmax(0, 0.46fr);
+}
+
+.councilScene {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: #272019;
+}
+
+.councilBackdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: brightness(0.68) saturate(0.72);
+  transform: scale(1.025);
+}
+
+.councilStepLabel {
+  display: grid;
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  left: 16px;
+  gap: 2px;
+  border: 1px solid rgba(255, 248, 234, 0.38);
+  border-radius: 14px;
+  background: rgba(28, 22, 18, 0.72);
+  padding: 8px 12px;
+  color: #fff8ea;
+  backdrop-filter: blur(8px);
+}
+
+.councilStepLabel span {
+  color: #e8bc86;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.councilStepLabel strong {
+  font-size: 18px;
+}
+
+.councilActors {
+  display: flex;
+  position: absolute;
+  z-index: 1;
+  right: 6px;
+  bottom: -2px;
+  left: 6px;
+  height: 88%;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.councilActor {
+  display: grid;
+  position: relative;
+  width: 47%;
+  height: 100%;
+  align-items: end;
+  justify-items: center;
+  margin: 0 -5%;
+  opacity: 0.78;
+}
+
+.councilActor[data-focus="true"] {
+  z-index: 2;
+  width: 57%;
+  opacity: 1;
+}
+
+.councilActors[data-count="3"] .councilActor {
+  width: 38%;
+  margin-inline: -6%;
+}
+
+.councilActors[data-count="3"] .councilActor[data-focus="true"] {
+  width: 47%;
+}
+
+.councilActor img {
+  width: 100%;
+  height: 91%;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 12px 16px rgba(18, 12, 8, 0.48));
+}
+
+.councilActor figcaption {
+  position: absolute;
+  bottom: 8px;
+  border: 1px solid rgba(255, 246, 228, 0.5);
+  border-radius: 999px;
+  background: rgba(44, 33, 25, 0.8);
+  padding: 4px 8px;
+  color: #fff8ea;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.councilDialogue {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border-top: 1px solid rgba(151, 106, 63, 0.18);
+  background:
+    radial-gradient(circle at 92% 8%, rgba(170, 71, 55, 0.08), transparent 40%),
+    rgba(255, 252, 246, 0.96);
+  padding: 18px;
+}
+
+.councilDialogue > span {
+  color: #9f4035;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.councilDialogue p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.councilLines {
+  display: grid;
+  gap: 7px;
+}
+
+.councilLines p {
+  border-left: 2px solid rgba(159, 64, 53, 0.32);
+  padding-left: 8px;
+}
+
+.councilFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.councilFacts b {
+  border: 1px solid rgba(130, 96, 60, 0.18);
+  border-radius: 999px;
+  background: #f4ecdf;
+  padding: 5px 8px;
+  color: #6b5c4d;
+  font-size: 11px;
+}
+
+.previewAction {
+  display: grid;
+  gap: 2px;
+  margin-top: auto;
+  border-radius: 13px;
+  background: #2a221b;
+  padding: 10px 12px;
+  color: #fff8ec;
+}
+
+.previewAction small {
+  color: #d8c2a6;
+  font-size: 10px;
+}
+
+.previewAction strong {
+  font-size: 13px;
 }
 
 .portraitCard img {
@@ -133,7 +317,8 @@
 }
 
 @media (max-width: 920px) {
-  .portraitGrid {
+  .portraitGrid,
+  .councilGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -152,9 +337,24 @@
     gap: 12px;
   }
 
+  .councilGrid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
   .portraitCard,
-  .motionCard {
+  .motionCard,
+  .councilCard {
     border-radius: 18px;
+  }
+
+  .councilCard {
+    min-height: 690px;
+    grid-template-rows: minmax(360px, 0.56fr) minmax(0, 0.44fr);
+  }
+
+  .councilDialogue p {
+    font-size: 16px;
   }
 
   .cardLabel {

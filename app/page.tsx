@@ -932,6 +932,7 @@ function AppShell({
   const [councilStep, setCouncilStep] = useState(0);
   const [councilExpenseOpen, setCouncilExpenseOpen] = useState(false);
   const [promotionOpen, setPromotionOpen] = useState(false);
+  const [rankAtlasOpen, setRankAtlasOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [clearBookOpen, setClearBookOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<LedgerItem | null>(null);
@@ -998,10 +999,21 @@ function AppShell({
         setRecordOpen(false);
       }
       else if (promotionOpen) setPromotionOpen(false);
+      else if (rankAtlasOpen) setRankAtlasOpen(false);
     };
     window.addEventListener("keydown", closeTopDialog);
     return () => window.removeEventListener("keydown", closeTopDialog);
-  }, [clearBookOpen, deleteTarget, feedback, promotionOpen, recordOpen, referenceEditor, riskOpen, settingsOpen]);
+  }, [clearBookOpen, deleteTarget, feedback, promotionOpen, rankAtlasOpen, recordOpen, referenceEditor, riskOpen, settingsOpen]);
+
+  useEffect(() => {
+    if (!rankAtlasOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .getElementById("rank-atlas-panel")
+        ?.scrollIntoView({ block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rankAtlasOpen]);
 
   useEffect(() => {
     if (!recoveryEvent || tab !== "home" || feedback) return;
@@ -1208,6 +1220,11 @@ function AppShell({
     { key: "council", label: "议事", mark: "议" },
     { key: "build", label: "建设", mark: "建" },
   ];
+
+  const goToTab = (nextTab: TabKey) => {
+    setRankAtlasOpen(false);
+    setTab(nextTab);
+  };
 
   const openRecorder = (
     seed = "",
@@ -1683,7 +1700,29 @@ function AppShell({
     setCouncilExpenseOpen(false);
   };
 
-  const renderHome = () => (
+  const renderHome = () => {
+    if (rankAtlasOpen) {
+      return (
+        <div className="page-stack rank-atlas-page" id="rank-atlas-panel">
+          <section className="page-title rank-atlas-title">
+            <div>
+              <span className="eyebrow">人物、官阶与治所总览</span>
+              <h1>人物与官署图鉴</h1>
+            </div>
+            <button
+              className="outline-button"
+              onClick={() => setRankAtlasOpen(false)}
+              data-testid="close-rank-atlas"
+            >
+              返回{courtVocabulary.residence}
+            </button>
+          </section>
+          {renderRankAtlas()}
+        </div>
+      );
+    }
+
+    return (
     <div className="page-stack">
       {mode === "demo" && (
         <section className="demo-guide" aria-label="新手引导">
@@ -1777,6 +1816,16 @@ function AppShell({
               </small>
             </div>
           </div>
+          <button
+            className="rank-atlas-entry"
+            onClick={() => setRankAtlasOpen(true)}
+            aria-expanded={rankAtlasOpen}
+            aria-controls="rank-atlas-panel"
+            data-testid="open-rank-atlas"
+          >
+            <span>人物与官署图鉴</span>
+            <b>查看五阶预览 →</b>
+          </button>
           <div className="quick-facts">
             <div><span>消费池差额</span><strong className={remaining < 0 ? "negative-text" : ""}>{formatMoney(remaining)}</strong></div>
             <div><span>已记录支出</span><strong>{formatMoney(expenseTotal)}</strong></div>
@@ -1862,7 +1911,8 @@ function AppShell({
         </div>
       </section>
     </div>
-  );
+    );
+  };
 
   const renderTreasury = () => (
     <div className="page-stack">
@@ -2216,7 +2266,7 @@ function AppShell({
     );
   };
 
-  const renderBuild = () => {
+  function renderRankAtlas() {
     const currentRankIndex = getRankIndex(state.profile.rank);
     const buildFiscalLabel =
       recoveryEvent
@@ -2256,45 +2306,12 @@ function AppShell({
     };
 
     return (
-      <div className="page-stack build-page">
-        <section className="page-title">
-          <div><span className="eyebrow">储蓄改变世界</span><h1>建设与官阶</h1></div>
-          <button className="outline-button" onClick={() => openRecorder(`储蓄${Math.min(100, Math.max(1, state.profile.savingsTarget - Math.max(0, treasuryBalance)))}元`)}>
-            记录一笔储蓄
-          </button>
-        </section>
-        <section className="room-scene-shell" aria-label={`${currentRankConfig.rooms.works.name}当前场景`}>
-          <SceneWireframe
-            rank={state.profile.rank}
-            presentation={state.profile.presentation}
-            room="works"
-            fiscalState={fiscalState}
-            treasuryBalance={treasuryBalance}
-            recovering={Boolean(recoveryEvent)}
-          />
-        </section>
-        <section className={`construction-card ${fiscalState}`}>
-          <div>
-            <span className="eyebrow">{fiscalState === "deficit" ? `当前任务 · 修复${courtVocabulary.residence}` : "当前工程"}</span>
-            <h2>{state.profile.savingsName}</h2>
-            <p>
-              {fiscalState === "deficit"
-                ? `${courtVocabulary.treasury}为负时${courtVocabulary.residence}会进入破损状态；后续储蓄会先修复破损，再继续长期建设。`
-                : "储蓄记录推动建设；消费池超支会改变当前场景状态。"}
-            </p>
-          </div>
-          <div className="construction-progress">
-            <strong>{savingsPercent}%</strong>
-            <div className="progress-line"><span style={{ width: `${savingsPercent}%` }} /></div>
-            <span>{courtVocabulary.treasury} {formatMoney(treasuryBalance)} / 目标 {formatMoney(state.profile.savingsTarget)}</span>
-            <small>目标日期：{state.profile.savingsDeadline}</small>
-          </div>
-        </section>
+      <>
         <section className="section-card rank-world-section">
           <div className="rank-world-heading">
             <div>
               <span className="eyebrow">五阶人物与官署共同成长</span>
-              <h2>仕途与官署图鉴</h2>
+              <h2>五阶仕途总览</h2>
             </div>
             <p>每阶都拥有独立人物服制与四个房间；财政变化会改变建筑破损、陈设、库存、施工和人气。</p>
           </div>
@@ -2354,9 +2371,9 @@ function AppShell({
                     </button>
                     {relation === "current" && (
                       <nav className="rank-room-nav" aria-label={`${rankName}官署空间`}>
-                        <button onClick={() => setTab("home")}>进入大堂</button>
-                        <button onClick={() => setTab("treasury")}>查看库房</button>
-                        <button onClick={() => setTab("council")}>前往议事厅</button>
+                        <button onClick={() => goToTab("home")}>进入大堂</button>
+                        <button onClick={() => goToTab("treasury")}>查看库房</button>
+                        <button onClick={() => goToTab("council")}>前往议事厅</button>
                         <button onClick={() => openWorldPreview(stage.key, "works", fiscalState)}>查看营造院</button>
                       </nav>
                     )}
@@ -2450,6 +2467,46 @@ function AppShell({
             </div>
           </div>
         </section>
+      </>
+    );
+  }
+
+  const renderBuild = () => {
+    return (
+      <div className="page-stack build-page">
+        <section className="page-title">
+          <div><span className="eyebrow">储蓄推动工程，超支改变施工状态</span><h1>建设与营造</h1></div>
+          <button className="outline-button" onClick={() => openRecorder(`储蓄${Math.min(100, Math.max(1, state.profile.savingsTarget - Math.max(0, treasuryBalance)))}元`)}>
+            记录一笔储蓄
+          </button>
+        </section>
+        <section className="room-scene-shell" aria-label={`${currentRankConfig.rooms.works.name}当前场景`}>
+          <SceneWireframe
+            rank={state.profile.rank}
+            presentation={state.profile.presentation}
+            room="works"
+            fiscalState={fiscalState}
+            treasuryBalance={treasuryBalance}
+            recovering={Boolean(recoveryEvent)}
+          />
+        </section>
+        <section className={`construction-card ${fiscalState}`}>
+          <div>
+            <span className="eyebrow">{fiscalState === "deficit" ? `当前任务 · 修复${courtVocabulary.residence}` : "当前工程"}</span>
+            <h2>{state.profile.savingsName}</h2>
+            <p>
+              {fiscalState === "deficit"
+                ? `${courtVocabulary.treasury}为负时${courtVocabulary.residence}会进入破损状态；后续储蓄会先修复破损，再继续长期建设。`
+                : "储蓄记录推动建设；消费池超支会改变材料、工人数量和施工进度。"}
+            </p>
+          </div>
+          <div className="construction-progress">
+            <strong>{savingsPercent}%</strong>
+            <div className="progress-line"><span style={{ width: `${savingsPercent}%` }} /></div>
+            <span>{courtVocabulary.treasury} {formatMoney(treasuryBalance)} / 目标 {formatMoney(state.profile.savingsTarget)}</span>
+            <small>目标日期：{state.profile.savingsDeadline}</small>
+          </div>
+        </section>
       </div>
     );
   };
@@ -2488,7 +2545,7 @@ function AppShell({
               <button
                 key={item.key}
                 className={tab === item.key ? "active" : ""}
-                onClick={() => setTab(item.key)}
+                onClick={() => goToTab(item.key)}
                 data-testid={`nav-${item.key}`}
               >
                 <span>{item.mark}</span>{item.label}
@@ -2517,7 +2574,7 @@ function AppShell({
 
       <nav className="mobile-nav" aria-label="移动端主要导航">
         {tabItems.slice(0, 2).map((item) => (
-          <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => setTab(item.key)}>
+          <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => goToTab(item.key)}>
             <span>{item.mark}</span>{item.label}
           </button>
         ))}
@@ -2526,7 +2583,7 @@ function AppShell({
           <small>记账</small>
         </button>
         {tabItems.slice(2).map((item) => (
-          <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => setTab(item.key)}>
+          <button key={item.key} className={tab === item.key ? "active" : ""} onClick={() => goToTab(item.key)}>
             <span>{item.mark}</span>{item.label}
           </button>
         ))}
@@ -2892,6 +2949,7 @@ function AppShell({
                     setPreviewRank("county");
                     setPreviewRoom("hall");
                     setPreviewFiscalState("stable");
+                    setRankAtlasOpen(false);
                     setSettingsOpen(false);
                     setTab("home");
                   }}

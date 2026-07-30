@@ -141,9 +141,9 @@ test("all four primary destinations have desktop, mobile, content, and room rout
     /<nav className="mobile-nav"[\s\S]*?tabItems\.slice\(0,\s*2\)[\s\S]*?tabItems\.slice\(2\)/,
     "mobile navigation should be generated from the same four-route contract",
   );
-  assert.match(source, /onClick=\{\(\) => setTab\("home"\)\}>进入大堂/);
-  assert.match(source, /onClick=\{\(\) => setTab\("treasury"\)\}>查看库房/);
-  assert.match(source, /onClick=\{\(\) => setTab\("council"\)\}>前往议事厅/);
+  assert.match(source, /onClick=\{\(\) => goToTab\("home"\)\}>进入大堂/);
+  assert.match(source, /onClick=\{\(\) => goToTab\("treasury"\)\}>查看库房/);
+  assert.match(source, /onClick=\{\(\) => goToTab\("council"\)\}>前往议事厅/);
   assert.match(
     source,
     /onClick=\{\(\) => openWorldPreview\(stage\.key, "works", fiscalState\)\}>查看营造院/,
@@ -476,25 +476,107 @@ test("county scenes have 12 real posters and reviewed motion sources", async () 
   assert.match(component, /loading=\{eagerPoster \? "eager" : "lazy"\}/);
 });
 
-test("build page combines rank characters, offices, and real room navigation", async () => {
+test("home owns the rank atlas while build stays focused on construction", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const atlasSource = source.slice(
+    source.indexOf("function renderRankAtlas()"),
+    source.indexOf("const renderBuild = () =>"),
+  );
+  const buildStart = source.indexOf("const renderBuild = () =>");
+  const buildSource = source.slice(
+    buildStart,
+    source.indexOf("\n  return (\n    <main className=\"prototype-app\">", buildStart),
+  );
 
-  assert.match(source, />仕途与官署图鉴</);
-  assert.match(source, /\{rankConfigs\.map\(\(stage, index\) => \{/);
-  assert.match(source, /className=\{`rank-world-card \$\{relation\}`\}/);
-  assert.match(source, /<RankPortrait[\s\S]*?rank=\{stage\.key\}/);
-  assert.match(source, /getSceneMediaAsset\(stage\.key, "hall", visualState\)/);
-  assert.match(source, /className="rank-room-nav"/);
-  assert.match(source, /onClick=\{\(\) => setTab\("home"\)\}>进入大堂/);
-  assert.match(source, /onClick=\{\(\) => setTab\("treasury"\)\}>查看库房/);
-  assert.match(source, /onClick=\{\(\) => setTab\("council"\)\}>前往议事厅/);
-  assert.match(source, /openWorldPreview\(stage\.key, "works", fiscalState\)/);
-  assert.match(source, /data-testid=\{`preview-rank-\$\{stage\.key\}`\}/);
-  assert.match(source, /data-testid=\{`world-rank-\$\{rank\.key\}`\}/);
-  assert.match(source, /data-testid=\{`world-room-\$\{room\}`\}/);
-  assert.match(source, /data-testid=\{`world-fiscal-\$\{value\}`\}/);
-  assert.match(source, /rank=\{previewRank\}[\s\S]*?room=\{previewRoom\}[\s\S]*?fiscalState=\{previewFiscalState\}/);
+  assert.match(source, /data-testid="open-rank-atlas"/);
+  assert.match(source, /data-testid="close-rank-atlas"/);
+  assert.match(source, /rankAtlasOpen[\s\S]*?renderRankAtlas\(\)/);
+  assert.match(source, />人物与官署图鉴</);
+  assert.match(atlasSource, />五阶仕途总览</);
+  assert.match(atlasSource, /\{rankConfigs\.map\(\(stage, index\) => \{/);
+  assert.match(atlasSource, /className=\{`rank-world-card \$\{relation\}`\}/);
+  assert.match(atlasSource, /<RankPortrait[\s\S]*?rank=\{stage\.key\}/);
+  assert.match(atlasSource, /getSceneMediaAsset\(stage\.key, "hall", visualState\)/);
+  assert.match(atlasSource, /className="rank-room-nav"/);
+  assert.match(atlasSource, /onClick=\{\(\) => goToTab\("home"\)\}>进入大堂/);
+  assert.match(atlasSource, /onClick=\{\(\) => goToTab\("treasury"\)\}>查看库房/);
+  assert.match(atlasSource, /onClick=\{\(\) => goToTab\("council"\)\}>前往议事厅/);
+  assert.match(atlasSource, /openWorldPreview\(stage\.key, "works", fiscalState\)/);
+  assert.match(atlasSource, /data-testid=\{`preview-rank-\$\{stage\.key\}`\}/);
+  assert.match(atlasSource, /data-testid=\{`world-rank-\$\{rank\.key\}`\}/);
+  assert.match(atlasSource, /data-testid=\{`world-room-\$\{room\}`\}/);
+  assert.match(atlasSource, /data-testid=\{`world-fiscal-\$\{value\}`\}/);
+  assert.match(atlasSource, /rank=\{previewRank\}[\s\S]*?room=\{previewRoom\}[\s\S]*?fiscalState=\{previewFiscalState\}/);
+  assert.match(source, /onResetDemo\(\);[\s\S]*?setRankAtlasOpen\(false\);[\s\S]*?setTab\("home"\);/);
+  assert.match(buildSource, /<h1>建设与营造<\/h1>/);
+  assert.match(buildSource, /room="works"/);
+  assert.match(buildSource, /className=\{`construction-card \$\{fiscalState\}`\}/);
+  assert.doesNotMatch(buildSource, /仕途与官署图鉴|rank-world-grid|world-preview/);
   assert.doesNotMatch(source, />场景库<|>官阶录<|className="scene-library"/);
+});
+
+test("accepted B backgrounds stay behind a blurred readability layer", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  for (const page of ["home", "treasury", "council", "build"]) {
+    assert.match(styles, new RegExp(`B-${page}\\.png`));
+  }
+  assert.match(
+    styles,
+    /\.main-content::before\s*\{[^}]*background-image:[^}]*var\(--tab-atmosphere\);[^}]*filter:\s*blur\(9px\) saturate\(0\.78\);[^}]*pointer-events:\s*none;/s,
+  );
+  assert.match(
+    styles,
+    /\.main-content > \*\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*1;/s,
+  );
+  assert.match(
+    styles,
+    /\.main-content::before\s*\{[^}]*background-repeat:\s*no-repeat;[^}]*background-size:\s*100% 100%,\s*100% auto;/s,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width:\s*640px\)[\s\S]*?\.main-content::before\s*\{[^}]*background-size:\s*100% 100%,\s*112% auto;/s,
+  );
+});
+
+test("review page presents the complete eight-stage game council", async () => {
+  const source = await readFile(new URL("../app/review/page.tsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../app/review/page.module.css", import.meta.url), "utf8");
+
+  for (const title of [
+    "开议",
+    "财政汇报",
+    "异常",
+    "三人谏言",
+    "调阅支出",
+    "调整草案",
+    "政绩结算",
+    "散会备忘",
+  ]) {
+    assert.match(source, new RegExp(`title: "${title}"`));
+  }
+  assert.match(source, /视觉小说式八阶段完整朝会/);
+  assert.match(source, /councilSteps\.map\(\(step\) =>/);
+  assert.match(source, /膳房怕是要把下个月的米缸也提前搬空/);
+  assert.match(source, /本期餐饮超支 ¥128，先查三笔最高支出/);
+  assert.match(
+    source,
+    /id: "07"[\s\S]*?speaker: "师爷"[\s\S]*?actors: \[\s*\["\/characters\/npc\/advisor\/county\/success\.webp", "师爷"\]/,
+  );
+  assert.doesNotMatch(source, /先把事情喊出来，再用真实数字说明原因/);
+  assert.match(source, /下一步按钮预览/);
+  assert.match(source, /旧版动态对照 · 已判定不通过/);
+  assert.match(styles, /\.councilGrid\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/s);
+  assert.match(styles, /@media \(max-width:\s*520px\)[\s\S]*?\.councilGrid\s*\{[^}]*grid-template-columns:\s*1fr;/s);
+});
+
+test("mobile quick facts wrap oversized treasury amounts instead of overlapping", async () => {
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(
+    styles,
+    /@media \(max-width:\s*640px\)[\s\S]*?\.quick-facts strong\s*\{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;/s,
+  );
 });
 
 test("rank world CSS uses unframed cutouts and a phone-safe single-column preview", async () => {

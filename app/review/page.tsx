@@ -19,17 +19,124 @@ const backgroundGroups = [
   },
   {
     id: "B",
-    title: "B｜官署全景延伸",
+    title: "B｜官署全景延伸（已确认）",
     description:
-      "每个页面都像真正进入对应房间，沉浸感更强；后续需要更严格处理文字可读性与资源体积。",
+      "正式采用时只作为虚化、低饱和的气氛层，不模糊任何文字、卡片和按钮。",
   },
 ] as const;
 
 const councilSteps = [
-  ["01-opening", "开议", "师爷宣告本周朝会开始"],
-  ["02-finance", "财政汇报", "账册展开，先呈事实再谈建议"],
-  ["03-issue", "核心议题", "三人提出不同视角，用户选择真实动作"],
-  ["04-settlement", "政绩结算", "盖印、入档并锁定本周期朝会"],
+  {
+    id: "01",
+    title: "开议",
+    speaker: "钱粮小吏",
+    line: "大人，本周期账册已经封好，共记了 6 笔。今日是否升堂核账？",
+    facts: ["7月22日—7月28日", "每周朝会", "本周期尚未召开"],
+    action: "升堂核账",
+    backdrop: "/previews/background/B-council.png",
+    actors: [
+      ["/characters/npc/comic/county/neutral.webp", "钱粮小吏"],
+      ["/characters/player/female/county/stable.webp", "县令"],
+    ],
+  },
+  {
+    id: "02",
+    title: "财政汇报",
+    speaker: "师爷",
+    line: "本周期共记录支出 ¥2,128，消费池 ¥2,000，当前差额 −¥128；县库账面为 ¥95。",
+    facts: ["收入 ¥4,005", "支出 ¥2,128", "预算使用率 106%"],
+    action: "查看异常",
+    backdrop: "/previews/background/B-council.png",
+    actors: [
+      ["/characters/npc/advisor/county/neutral.webp", "师爷"],
+      ["/characters/npc/comic/county/neutral.webp", "钱粮小吏"],
+    ],
+  },
+  {
+    id: "03",
+    title: "异常",
+    speaker: "钱粮小吏",
+    line: "大人！餐饮已经用到 114%，超出原定额度 ¥128 啦！",
+    facts: ["餐饮预算 ¥900", "已用 ¥1,028", "前三笔合计 ¥780"],
+    action: "召集三人谏言",
+    backdrop: "/scenes/county/council/strained/poster.webp",
+    actors: [
+      ["/characters/npc/comic/county/warning.webp", "钱粮小吏"],
+      ["/characters/npc/advisor/county/warning.webp", "师爷"],
+    ],
+  },
+  {
+    id: "04",
+    title: "三人谏言",
+    speaker: "钱粮小吏 · 师爷 · 随行知己",
+    line: "三人依次呈报本期餐饮超支",
+    lines: [
+      "钱粮小吏：“大人！膳房怕是要把下个月的米缸也提前搬空啦！”",
+      "师爷：“本期餐饮超支 ¥128，先查三笔最高支出，再决定下周期收紧哪一项。”",
+      "随行知己：“现在发现正好，先看清原因，不必一下子把所有享用都砍掉。”",
+    ],
+    facts: ["餐饮超支 ¥128", "先查三笔支出", "下周期再调整"],
+    action: "调阅三笔主要支出",
+    backdrop: "/scenes/county/council/strained/poster.webp",
+    actors: [
+      ["/characters/npc/comic/county/warning.webp", "钱粮小吏"],
+      ["/characters/npc/advisor/county/warning.webp", "师爷"],
+      ["/characters/npc/companion-female/county/warning.webp", "随行知己"],
+    ],
+  },
+  {
+    id: "05",
+    title: "调阅支出",
+    speaker: "师爷",
+    line: "超支主要集中在三笔：同学聚餐 ¥420、夜宵 ¥238、外卖 ¥122，共计 ¥780。",
+    facts: ["占餐饮支出 76%", "可查看详情", "可编辑或删除"],
+    action: "生成调整草案",
+    backdrop: "/previews/background/B-treasury.png",
+    actors: [
+      ["/characters/npc/advisor/county/neutral.webp", "师爷"],
+      ["/characters/npc/comic/county/neutral.webp", "钱粮小吏"],
+    ],
+  },
+  {
+    id: "06",
+    title: "调整草案",
+    speaker: "师爷与随行知己",
+    line: "本期餐饮额度 ¥900、实际 ¥1,028；下周期参考额度先拟为 ¥950，可继续修改。",
+    facts: ["只保存下周期草案", "不改本期余额", "可修改、可删除"],
+    action: "保存草案",
+    backdrop: "/previews/background/B-council.png",
+    actors: [
+      ["/characters/npc/advisor/county/neutral.webp", "师爷"],
+      ["/characters/npc/companion-female/county/neutral.webp", "随行知己"],
+    ],
+  },
+  {
+    id: "07",
+    title: "政绩结算",
+    speaker: "师爷",
+    line: "本周期记录 6 笔，完成朝会 1 次，本次获得政绩 65。",
+    facts: ["累计政绩 125", "下一阶 知府", "还差 35"],
+    action: "生成散会备忘",
+    backdrop: "/previews/background/B-council.png",
+    actors: [
+      ["/characters/npc/advisor/county/success.webp", "师爷"],
+      ["/characters/player/female/county/stable.webp", "县令"],
+      ["/characters/npc/comic/county/success.webp", "钱粮小吏"],
+    ],
+  },
+  {
+    id: "08",
+    title: "散会备忘",
+    speaker: "随行知己",
+    line: "账已经看明白了，接下来照常记录就好。下次朝会再看看这份调整是否合适。",
+    facts: ["本周期已锁定", "下次朝会：下周一", "草案可回看编辑"],
+    action: "返回县衙",
+    backdrop: "/scenes/county/council/stable/poster.webp",
+    actors: [
+      ["/characters/npc/companion-female/county/success.webp", "随行知己"],
+      ["/characters/npc/advisor/county/success.webp", "师爷"],
+    ],
+  },
 ] as const;
 
 const rooms = [
@@ -52,8 +159,8 @@ export default function ReviewPage() {
         <Link href="/">← 返回朝账原型</Link>
         <h1>朝账视觉与动态评审</h1>
         <p>
-          这是独立评审页，不代表背景方案已经应用。请先比较 A、B
-          两套全局背景与朝会流程，再验收县令阶段 12 个 4 秒循环场景。
+          B 背景已按“虚化且不干扰内容”应用到原型；这里集中查看完整 8 段游戏式朝会，
+          并保留旧版 12 条动景作为问题对照。
         </p>
       </header>
 
@@ -85,22 +192,47 @@ export default function ReviewPage() {
       <section className={styles.section}>
         <div className={styles.sectionHead}>
           <span>游戏式朝会预览</span>
-          <h2>视觉小说式四阶段朝会</h2>
+          <h2>视觉小说式八阶段完整朝会</h2>
           <p>
-            当前发言角色放大，其他角色在场景中待机；文字、数字和真实按钮由程序叠加，不写死在图片里。
+            每一段都给出角色动作、真实账目内容和明确下一步。当前发言者放大，其他角色仍留在场景中，不再只是四张概念图。
           </p>
         </div>
-        <div className={styles.portraitGrid}>
-          {councilSteps.map(([asset, title, description]) => (
-            <article className={styles.portraitCard} key={asset}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/previews/council/${asset}.png`}
-                alt={`${title}朝会界面预览`}
-              />
-              <div className={styles.cardLabel}>
-                <strong>{title}</strong>
-                <span>{description}</span>
+        <div className={styles.councilGrid}>
+          {councilSteps.map((step) => (
+            <article className={styles.councilCard} key={step.id}>
+              <div className={styles.councilScene}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className={styles.councilBackdrop} src={step.backdrop} alt="" />
+                <div className={styles.councilStepLabel}>
+                  <span>{step.id} / 08</span>
+                  <strong>{step.title}</strong>
+                </div>
+                <div className={styles.councilActors} data-count={step.actors.length}>
+                  {step.actors.map(([src, name], index) => (
+                    <figure className={styles.councilActor} key={`${step.id}-${name}`} data-focus={index === 0}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt={`${name}人物预览`} />
+                      <figcaption>{name}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.councilDialogue}>
+                <span>{step.speaker}</span>
+                {"lines" in step ? (
+                  <div className={styles.councilLines}>
+                    {step.lines.map((line) => <p key={line}>{line}</p>)}
+                  </div>
+                ) : (
+                  <p>“{step.line}”</p>
+                )}
+                <div className={styles.councilFacts}>
+                  {step.facts.map((fact) => <b key={fact}>{fact}</b>)}
+                </div>
+                <div className={styles.previewAction}>
+                  <small>下一步按钮预览</small>
+                  <strong>{step.action} →</strong>
+                </div>
               </div>
             </article>
           ))}
@@ -109,11 +241,11 @@ export default function ReviewPage() {
 
       <section className={styles.section}>
         <div className={styles.sectionHead}>
-          <span>县令阶段动态样板</span>
-          <h2>四个房间 × 三种财政状态</h2>
+          <span>旧版动态对照 · 已判定不通过</span>
+          <h2>问题证据：只有光影，没有人物行动</h2>
           <p>
-            每条 4 秒、24 帧/秒、1280×720。视频首尾同相位；无法播放或开启“减少动态效果”时显示
-            1600×900 高清海报。
+            下面 12 条只保留用于对照，不再作为交付结果。新版必须出现行走、搬运、鞠躬进谏和施工，
+            并继续保持 4 秒、24 帧/秒、1280×720 的循环格式。
           </p>
         </div>
         {rooms.map(([room, roomLabel]) => (
