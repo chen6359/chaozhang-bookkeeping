@@ -591,18 +591,83 @@ test("the real council runs the approved eight stages with persisted progress an
   }
   assert.match(source, /councilStep:\s*number;/);
   assert.match(source, /candidate\.councilDone[\s\S]*?Math\.max\(0,\s*Math\.min\(7,\s*Number\(candidate\.councilStep\)/);
-  assert.match(source, /data-testid="council-dialogue-cast"/);
-  assert.match(source, /onClick=\{\(\) => editItem\(matchingEntry\)\}>修改<\/button>/);
+  assert.match(source, /import \{ CouncilNovelStage \} from "\.\.\/components\/CouncilNovelStage"/);
+  assert.match(source, /renderCouncilNovelStage\(/);
+  assert.match(source, /activeActor=\{activeActor\}/);
+  assert.match(source, /current:\s*councilStep \+ 1/);
+  assert.match(source, /name:\s*courtRoles\.comic[\s\S]*?tone:\s*"请示开议"/);
+  assert.match(
+    source,
+    /onClick=\{\(\) => editItem\(matchingEntry\)\}[\s\S]*?>\s*修改\s*<\/button>/,
+  );
+  assert.match(
+    source,
+    /data-testid="delete-council-entry"[\s\S]*?>\s*删除\s*<\/button>/,
+  );
+  assert.match(source, /onClick=\{\(\) => deleteItem\(matchingEntry\)\}/);
   assert.match(source, /data-testid="open-council-reference-editor"/);
   assert.match(source, /data-testid="finish-council"/);
   assert.match(source, /!hasRisk\s*\?\s*"本周期未见明显异常"/);
   assert.match(source, /getCouncilPeriodKey\(lastCouncilDate,\s*"weekly"\)/);
   assert.match(source, /const weeklyMerit = meritAlreadyAwardedThisWeek \? 0 : councilMeritTotal;/);
   assert.match(styles, /\.council-steps\s*\{[^}]*grid-template-columns:\s*repeat\(8,/s);
+});
+
+test("the formal council stage keeps the active speaker large while the ensemble remains visible", async () => {
+  const component = await readFile(
+    new URL("../components/CouncilNovelStage.tsx", import.meta.url),
+    "utf8",
+  );
+  const styles = await readFile(
+    new URL("../components/CouncilNovelStage.module.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(component, /data-testid="council-novel-stage"/);
+  assert.match(component, /data-active-actor=\{focusedActor\}/);
+  assert.match(component, /visibleActors\.map/);
+  assert.match(component, /styles\.activeActor/);
+  assert.match(component, /styles\.supportingActor/);
+  assert.match(component, /dialogueItems\.slice\(0,\s*3\)\.map/);
+  assert.match(styles, /\.activeActor\s*\{[^}]*transform:\s*scale\(1\.13\)/s);
+  assert.match(styles, /\.supportingActor\s*\{[^}]*opacity:\s*0\.82;/s);
   assert.match(
     styles,
-    /@media \(max-width:\s*760px\)[\s\S]*?\.council-dialogue-cast\.cast-3\s*\{[^}]*grid-template-columns:\s*1fr;/s,
+    /@media \(max-width:\s*720px\)[\s\S]*?\.dialogueGrid\s*\{[^}]*grid-template-columns:\s*1fr;/s,
   );
+});
+
+test("all four rooms have visible rank-aware activity loops for every fiscal state", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const component = await readFile(
+    new URL("../components/RoomActivityLayer.tsx", import.meta.url),
+    "utf8",
+  );
+  const styles = await readFile(
+    new URL("../components/RoomActivityLayer.module.css", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /<RoomActivityLayer[\s\S]*?room=\{room\}[\s\S]*?fiscalState=\{fiscalState\}/);
+  for (const room of ["hall", "treasury", "council", "works"]) {
+    assert.match(component, new RegExp(`case "${room}":`));
+  }
+  assert.match(component, /stable:\s*3/);
+  assert.match(component, /strained:\s*2/);
+  assert.match(component, /deficit:\s*1/);
+  assert.match(component, /data-room-activity=\{room\}/);
+  assert.match(component, /data-activity-motion=\{actor\.motion\}/);
+  for (const motion of [
+    "walk-route",
+    "carry-route",
+    "bow-report",
+    "advise-step",
+    "haul-timber",
+    "hammer-work",
+  ]) {
+    assert.match(styles, new RegExp(`@keyframes ${motion}`));
+  }
+  assert.match(styles, /@media \(prefers-reduced-motion:\s*reduce\)/);
 });
 
 test("mobile quick facts wrap oversized treasury amounts instead of overlapping", async () => {
@@ -665,7 +730,6 @@ test("rank-aware NPCs use standalone role, rank, and event-mood assets", async (
   assert.match(source, /data-role-name=\{role\.name\}/);
   assert.match(source, /riskLevel === "deficit" \? "alarm" : "warning"/);
   assert.match(source, /mood=\{role\.mood\}/);
-  assert.match(source, /mood=\{role\.mood \?\? "council"\}/);
   assert.match(source, /mood:\s*"council"/);
   assert.match(source, /didRecover \|\| recoveryCompleted \? "recovery" : "success"/);
   assert.match(source, /const asset = getNpcPortraitAsset\(/);

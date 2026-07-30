@@ -29,6 +29,8 @@ import {
 import { getNpcPortraitAsset } from "../lib/characters";
 import { getSceneMediaAsset } from "../lib/scene-media";
 import { SceneMedia } from "../components/SceneMedia";
+import { CouncilNovelStage } from "../components/CouncilNovelStage";
+import { RoomActivityLayer } from "../components/RoomActivityLayer";
 import {
   getFiscalStateCopy,
   getNextRank,
@@ -438,44 +440,6 @@ function NpcPortrait({
       <img src={asset.src} alt="" draggable={false} />
       <span className="sr-only">{name}</span>
     </span>
-  );
-}
-
-function CouncilDialogueCast({
-  cast,
-  rank,
-  presentation,
-}: {
-  cast: FeedbackRole[];
-  rank: string;
-  presentation: string;
-}) {
-  return (
-    <div className={`council-dialogue-cast cast-${cast.length}`} data-testid="council-dialogue-cast">
-      {cast.map((role) => (
-        <article
-          className={`council-dialogue-card council-dialogue-${role.kind}`}
-          data-role-kind={role.kind}
-          data-role-name={role.name}
-          key={`${role.kind}-${role.name}-${role.tone}`}
-        >
-          <div className="council-dialogue-identity">
-            <NpcPortrait
-              kind={role.kind}
-              name={role.name}
-              mood={role.mood ?? "council"}
-              rank={rank}
-              presentation={presentation}
-            />
-            <span className="npc-name">{role.name}</span>
-          </div>
-          <div className="council-dialogue-bubble">
-            <span>{role.tone}</span>
-            <p>“{role.line}”</p>
-          </div>
-        </article>
-      ))}
-    </div>
   );
 }
 
@@ -939,6 +903,12 @@ function SceneWireframe({
         eagerPoster={room === "hall"}
       />
       <div className="world-scene-shade" aria-hidden="true" />
+      <RoomActivityLayer
+        room={room}
+        fiscalState={fiscalState}
+        rank={rank}
+        presentation={presentation}
+      />
       <div className="world-scene-topline">
         <span className="scene-rank">{rankConfig.residenceName} · {roomConfig.genericName}</span>
         <span className={`fiscal-state-label ${fiscalState}`}>{fiscalLabel}</span>
@@ -2136,6 +2106,42 @@ function AppShell({
 
   const renderCouncil = () => {
     const hasEnoughData = mode === "demo" || state.ledger.length >= 1;
+    const councilBackdrop = getSceneMediaAsset(
+      state.profile.rank,
+      "council",
+      fiscalState,
+    );
+    const renderCouncilNovelStage = (
+      cast: FeedbackRole[],
+      title: string,
+      activeActor: FeedbackRole["kind"] = cast[0]?.kind ?? "advisor",
+      eyebrow = councilStageLabels[councilStep],
+    ) => (
+      <CouncilNovelStage
+        backdrop={councilBackdrop}
+        actors={cast.map((role) => ({
+          id: role.kind,
+          kind: role.kind,
+          name: role.name,
+          mood: role.mood ?? "council",
+        }))}
+        activeActor={activeActor}
+        dialogue={cast.map((role) => ({
+          actorId: role.kind,
+          text: role.line,
+          tone: role.tone,
+        }))}
+        progress={{
+          current: councilStep + 1,
+          total: councilStageLabels.length,
+          label: "朝会议程",
+        }}
+        rank={state.profile.rank}
+        presentation={state.profile.presentation}
+        eyebrow={eyebrow}
+        title={title}
+      />
+    );
     const councilScene = (
       <section className="room-scene-shell" aria-label={`${courtRoles.council}场景`}>
         <SceneWireframe
@@ -2171,27 +2177,30 @@ function AppShell({
           {councilScene}
           <section className="council-stage">
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[
+              <CouncilNovelStage
+                backdrop={councilBackdrop}
+                actors={[
+                  { id: "companion", kind: "companion", name: courtRoles.companion, mood: "success" },
+                  { id: "advisor", kind: "advisor", name: courtRoles.advisor, mood: "success" },
+                ]}
+                activeActor="companion"
+                dialogue={[
                   {
-                    mark: "安",
-                    kind: "companion",
-                    name: courtRoles.companion,
+                    actorId: "companion",
                     tone: "散会备忘",
-                    mood: "success",
-                    line: "账已经看明白了，接下来照常记录就好。下次议事再看看这份调整是否合适。",
+                    text: "账已经看明白了，接下来照常记录就好。下次议事再看看这份调整是否合适。",
                   },
                   {
-                    mark: "策",
-                    kind: "advisor",
-                    name: courtRoles.advisor,
+                    actorId: "advisor",
                     tone: "留档",
-                    mood: "success",
-                    line: `本次决议已经记入${courtRoles.council}备忘，当前账目不会被自动改写。`,
+                    text: `本次决议已经记入${courtRoles.council}备忘，当前账目不会被自动改写。`,
                   },
                 ]}
+                progress={{ current: 8, total: 8, label: "朝会议程" }}
                 rank={state.profile.rank}
                 presentation={state.profile.presentation}
+                eyebrow="本周期议事已完成"
+                title="散会备忘已经留档"
               />
               <div className="council-section-heading">
                 <p className="eyebrow">最近一次议事备忘</p>
@@ -2249,7 +2258,6 @@ function AppShell({
               : getCouncilCadenceLabel(state.councilCadence)}
           </span>
         </section>
-        {councilScene}
         <section className="council-stage">
           <div className="council-steps" aria-label="朝会议程">
             {councilStageLabels.map((label, index) => (
@@ -2264,20 +2272,29 @@ function AppShell({
           </div>
           {councilStep === 0 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[
+              {renderCouncilNovelStage(
+                [
+                  {
+                    mark: "急",
+                    kind: "comic",
+                    name: courtRoles.comic,
+                    tone: "请示开议",
+                    mood: "council",
+                    line: `${comicAddress}，本周期${state.ledger.length}笔账已经封册。账房、师爷都候在堂下，是否现在升堂核账？`,
+                  },
                   {
                     mark: "策",
                     kind: "advisor",
                     name: courtRoles.advisor,
-                    tone: "请议",
-                    mood: "council",
-                    line: `${courtAddress}，本周期${state.ledger.length}笔账已经封册。若无异议，现在便升堂核账。`,
+                    tone: "候命",
+                    mood: "neutral",
+                    line: "账册与分类明细已经核对完毕，随时可以开始本次议事。",
                   },
-                ]}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+                ],
+                "账册已封，请示升堂",
+                "comic",
+                "开议",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">{courtRoles.advisor}主持</p>
                 <h2>账册已备，请开启本次议事</h2>
@@ -2290,8 +2307,8 @@ function AppShell({
           )}
           {councilStep === 1 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[
+              {renderCouncilNovelStage(
+                [
                   {
                     mark: "策",
                     kind: "advisor",
@@ -2300,10 +2317,19 @@ function AppShell({
                     mood: "council",
                     line: `本周期共记录支出${formatMoney(expenseTotal)}，消费池为${formatMoney(state.profile.disposable)}，${courtVocabulary.treasury}账面为${formatMoney(treasuryBalance)}。`,
                   },
-                ]}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+                  {
+                    mark: "急",
+                    kind: "comic",
+                    name: courtRoles.comic,
+                    tone: "递送账册",
+                    mood: "neutral",
+                    line: `账房已经把${state.ledger.length}笔流水逐项夹好，金额和分类都能当堂调阅。`,
+                  },
+                ],
+                "本周期财政汇报",
+                "advisor",
+                "财政汇报",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">{courtRoles.advisor}呈报 · 本次账情</p>
                 <h2>本周期已记录支出 {formatMoney(expenseTotal)}</h2>
@@ -2318,11 +2344,12 @@ function AppShell({
           )}
           {councilStep === 2 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[currentRiskCast[0]]}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+              {renderCouncilNovelStage(
+                currentRiskCast.slice(0, 2),
+                hasRisk ? currentRiskTitle : "本周期账情平稳",
+                currentRiskCast[0]?.kind ?? "comic",
+                "异常核验",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">
                   {hasRisk ? "本周期最需要留意的一项" : "本周期账情平稳"}
@@ -2349,11 +2376,12 @@ function AppShell({
           )}
           {councilStep === 3 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={councilTrioCast}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+              {renderCouncilNovelStage(
+                councilTrioCast,
+                "三人依次奏对",
+                "comic",
+                "急报 · 谏言 · 宽慰",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">急报 · 谏言 · 宽慰</p>
                 <h2>三人已经把问题、数字和下一步说清</h2>
@@ -2363,20 +2391,29 @@ function AppShell({
           )}
           {councilStep === 4 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[
+              {renderCouncilNovelStage(
+                [
                   {
                     mark: "策",
                     kind: "advisor",
                     name: courtRoles.advisor,
                     tone: "调阅支出",
                     mood: "council",
-                    line: `${leadingCategory.key}支出中，金额最高的三笔已经列在下方。若发现误记，可以直接修改。`,
+                    line: `${leadingCategory.key}支出中，金额最高的三笔已经列在下方。若发现误记，可以直接修改或删除，账面会同步重算。`,
                   },
-                ]}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+                  {
+                    mark: "急",
+                    kind: "comic",
+                    name: courtRoles.comic,
+                    tone: "递账",
+                    mood: "neutral",
+                    line: "三笔原始流水都在这里，改动前会再次请你确认，不会误删。",
+                  },
+                ],
+                `${leadingCategory.key}三笔主要支出`,
+                "advisor",
+                "调阅真实流水",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">真实账目 · 可修改</p>
                 <h2>{leadingCategory.key}三笔主要支出</h2>
@@ -2395,7 +2432,18 @@ function AppShell({
                         </div>
                         <b>{formatMoney(item.amount)}</b>
                         {matchingEntry ? (
-                          <button className="outline-button" onClick={() => editItem(matchingEntry)}>修改</button>
+                          <div className="council-expense-actions">
+                            <button className="outline-button" onClick={() => editItem(matchingEntry)}>
+                              修改
+                            </button>
+                            <button
+                              className="danger-outline-button"
+                              onClick={() => deleteItem(matchingEntry)}
+                              data-testid="delete-council-entry"
+                            >
+                              删除
+                            </button>
+                          </div>
                         ) : (
                           <span className="ledger-summary-label">账簿汇总</span>
                         )}
@@ -2414,8 +2462,8 @@ function AppShell({
           )}
           {councilStep === 5 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[
+              {renderCouncilNovelStage(
+                [
                   {
                     mark: "策",
                     kind: "advisor",
@@ -2432,10 +2480,11 @@ function AppShell({
                     mood: "council",
                     line: "可以先设置一个参考额度，也可以保持现状继续观察。你的选择之后仍能修改。",
                   },
-                ]}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+                ],
+                `拟定下周期${leadingCategory.key}草案`,
+                "advisor",
+                "调整草案",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">只影响下周期参考</p>
                 <h2>为{leadingCategory.key}留下一个可执行的调整草案</h2>
@@ -2490,8 +2539,8 @@ function AppShell({
           )}
           {councilStep === 6 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[
+              {renderCouncilNovelStage(
+                [
                   {
                     mark: "策",
                     kind: "advisor",
@@ -2510,10 +2559,11 @@ function AppShell({
                     mood: "success",
                     line: `${comicAddress}，账也核了、主意也定了，这回的政绩小的已经算得明明白白！`,
                   },
-                ]}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+                ],
+                "本次政绩结算",
+                "advisor",
+                "政绩结算",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">本次最高80点</p>
                 <h2>政绩结算</h2>
@@ -2538,8 +2588,8 @@ function AppShell({
           )}
           {councilStep === 7 && (
             <div className="council-content">
-              <CouncilDialogueCast
-                cast={[
+              {renderCouncilNovelStage(
+                [
                   {
                     mark: "安",
                     kind: "companion",
@@ -2556,10 +2606,11 @@ function AppShell({
                     mood: "success",
                     line: `本次决定为：“${state.councilDecision || "维持现状，继续观察"}”。散会后将写入账本备忘。`,
                   },
-                ]}
-                rank={state.profile.rank}
-                presentation={state.profile.presentation}
-              />
+                ],
+                "本次散会备忘",
+                "companion",
+                "散会备忘",
+              )}
               <div className="council-section-heading">
                 <p className="eyebrow">本次议事备忘</p>
                 <h2>{state.councilDecision || "维持现状，继续观察"}</h2>

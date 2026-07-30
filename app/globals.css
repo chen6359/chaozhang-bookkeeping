@@ -2950,6 +2950,7 @@ textarea:focus {
 .world-scene-caption {
   display: grid;
   position: absolute;
+  z-index: 2;
   right: 24px;
   bottom: 22px;
   left: 24px;
@@ -6343,6 +6344,34 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.council-expense-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.council-expense-actions button {
+  min-height: 40px;
+  padding: 8px 13px;
+}
+
+.danger-outline-button {
+  border: 1px solid rgba(160, 62, 52, 0.42);
+  border-radius: 12px;
+  background: rgba(255, 247, 241, 0.92);
+  color: #9d3f36;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.danger-outline-button:hover,
+.danger-outline-button:focus-visible {
+  border-color: #9d3f36;
+  background: rgba(157, 63, 54, 0.08);
+  outline: 3px solid rgba(157, 63, 54, 0.12);
+}
+
 @media (max-width: 760px) {
   .council-stage {
     border-radius: 22px;
@@ -6403,11 +6432,15 @@ textarea:focus {
     padding: 13px;
   }
 
-  .council-expense-ledger article > .outline-button,
+  .council-expense-actions,
   .council-expense-ledger article > .ledger-summary-label {
     grid-column: 1 / -1;
     justify-self: stretch;
     text-align: center;
+  }
+
+  .council-expense-actions > button {
+    flex: 1;
   }
 }
 

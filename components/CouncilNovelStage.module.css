@@ -1,0 +1,358 @@
+.stage {
+  --council-actor-count: 1;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-rows: auto minmax(21rem, 1fr) auto;
+  min-height: 40rem;
+  overflow: hidden;
+  color: #fffaf1;
+  border: 1px solid rgba(223, 197, 152, 0.76);
+  border-radius: clamp(1.5rem, 3vw, 2.5rem);
+  background: #21160f;
+  box-shadow:
+    0 1.5rem 4rem rgba(53, 31, 18, 0.25),
+    inset 0 0 0 1px rgba(255, 248, 230, 0.12);
+}
+
+.backdrop,
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+}
+
+.backdrop > img,
+.backdropMedia,
+.backdropMedia :global(.scene-media-poster),
+.backdropMedia :global(.scene-media-video) {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.backdropMedia {
+  position: absolute !important;
+  inset: 0;
+}
+
+.scrim {
+  z-index: -1;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(23, 16, 11, 0.48) 0%,
+      rgba(23, 16, 11, 0.06) 31%,
+      rgba(23, 16, 11, 0.18) 61%,
+      rgba(23, 16, 11, 0.86) 100%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(23, 16, 11, 0.36) 0%,
+      transparent 38%,
+      rgba(23, 16, 11, 0.22) 100%
+    );
+}
+
+.heading {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+}
+
+.heading h2 {
+  margin: 0.2rem 0 0;
+  color: #fffaf1;
+  font-family: var(--font-serif, "Songti SC", "STSong", serif);
+  font-size: clamp(1.8rem, 4vw, 3.4rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0.2rem 0.8rem rgba(0, 0, 0, 0.64);
+}
+
+.eyebrow {
+  color: #f2cf91;
+  font-size: 0.83rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.progress {
+  display: grid;
+  justify-items: end;
+  gap: 0.1rem;
+  min-width: 7.5rem;
+  padding: 0.7rem 0.9rem;
+  color: #f9e8c6;
+  border: 1px solid rgba(244, 213, 161, 0.45);
+  border-radius: 999px;
+  background: rgba(24, 16, 11, 0.68);
+  box-shadow: 0 0.8rem 2rem rgba(14, 8, 4, 0.22);
+  backdrop-filter: blur(0.65rem);
+}
+
+.progress span {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+}
+
+.progress strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.cast {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--council-actor-count), minmax(0, 1fr));
+  align-items: end;
+  justify-items: center;
+  gap: clamp(0.25rem, 2vw, 1.5rem);
+  min-height: 21rem;
+  padding: 0 clamp(0.75rem, 3vw, 3rem);
+}
+
+.actor {
+  position: relative;
+  display: grid;
+  align-self: end;
+  justify-items: center;
+  width: 100%;
+  max-width: 22rem;
+  min-width: 0;
+  margin: 0;
+  transform-origin: 50% 100%;
+  transition:
+    transform 240ms ease,
+    filter 240ms ease,
+    opacity 240ms ease;
+}
+
+.activeActor {
+  z-index: 3;
+  transform: scale(1.13) translateY(0.25rem);
+  filter: drop-shadow(0 1.35rem 1.1rem rgba(15, 8, 3, 0.42));
+}
+
+.supportingActor {
+  z-index: 1;
+  opacity: 0.82;
+  transform: scale(0.82) translateY(1.5rem);
+  filter: saturate(0.78) brightness(0.84)
+    drop-shadow(0 1rem 0.85rem rgba(15, 8, 3, 0.36));
+}
+
+.portrait {
+  display: grid;
+  align-items: end;
+  width: 100%;
+  height: clamp(18rem, 39vw, 32rem);
+}
+
+.portrait img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  user-select: none;
+}
+
+.actor figcaption {
+  position: absolute;
+  bottom: 0.6rem;
+  left: 50%;
+  z-index: 2;
+  max-width: calc(100% - 1rem);
+  padding: 0.5rem 0.88rem;
+  overflow: hidden;
+  color: #fffaf1;
+  font-size: clamp(0.82rem, 1.5vw, 1rem);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 243, 218, 0.56);
+  border-radius: 999px;
+  background: rgba(40, 28, 20, 0.78);
+  box-shadow: 0 0.5rem 1rem rgba(24, 13, 7, 0.24);
+  backdrop-filter: blur(0.55rem);
+  transform: translateX(-50%);
+}
+
+.dialogue {
+  position: relative;
+  z-index: 5;
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 clamp(0.75rem, 3vw, 2rem) clamp(0.75rem, 3vw, 2rem);
+  padding: clamp(1rem, 2.8vw, 1.65rem);
+  color: #2c2018;
+  border: 1px solid rgba(98, 66, 38, 0.22);
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(
+      110deg,
+      rgba(255, 252, 243, 0.97),
+      rgba(247, 234, 208, 0.94)
+    );
+  box-shadow:
+    0 1rem 2.5rem rgba(17, 9, 4, 0.34),
+    inset 0 1px rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(1rem);
+}
+
+.dialogue::before {
+  position: absolute;
+  top: -0.7rem;
+  left: clamp(2rem, 12%, 7.5rem);
+  width: 1.35rem;
+  height: 1.35rem;
+  content: "";
+  border-top: 1px solid rgba(98, 66, 38, 0.2);
+  border-left: 1px solid rgba(98, 66, 38, 0.2);
+  background: rgba(255, 250, 238, 0.96);
+  transform: rotate(45deg);
+}
+
+.speaker {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.speaker strong {
+  color: #9b3d2e;
+  font-size: 1rem;
+}
+
+.speaker span {
+  padding: 0.2rem 0.48rem;
+  color: #765642;
+  font-size: 0.72rem;
+  border: 1px solid rgba(123, 85, 54, 0.26);
+  border-radius: 999px;
+}
+
+.dialogue p {
+  margin: 0;
+  font-size: clamp(1rem, 2.1vw, 1.28rem);
+  line-height: 1.7;
+}
+
+.ensembleDialogue {
+  padding: 0.6rem;
+}
+
+.ensembleDialogue::before {
+  display: none;
+}
+
+.dialogueGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.dialogueItem {
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(112, 78, 50, 0.16);
+  border-radius: 0.9rem;
+  background: rgba(255, 253, 247, 0.54);
+}
+
+.dialogueItem.activeDialogue {
+  border-color: rgba(163, 57, 43, 0.46);
+  background: rgba(255, 248, 233, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(163, 57, 43, 0.1);
+}
+
+.dialogueItem p {
+  font-size: clamp(0.86rem, 1.45vw, 1.02rem);
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .stage {
+    grid-template-rows: auto minmax(16.5rem, 1fr) auto;
+    min-height: 35rem;
+    border-radius: 1.55rem;
+  }
+
+  .heading {
+    padding: 1rem;
+  }
+
+  .heading h2 {
+    font-size: clamp(1.55rem, 8vw, 2.35rem);
+  }
+
+  .progress {
+    min-width: auto;
+    padding: 0.55rem 0.68rem;
+  }
+
+  .progress span {
+    display: none;
+  }
+
+  .cast {
+    gap: 0;
+    min-height: 16.5rem;
+    padding: 0 0.2rem;
+  }
+
+  .portrait {
+    height: clamp(13rem, 60vw, 20rem);
+  }
+
+  .activeActor {
+    transform: scale(1.08);
+  }
+
+  .supportingActor {
+    opacity: 0.72;
+    transform: scale(0.76) translateY(1.1rem);
+  }
+
+  .actor figcaption {
+    bottom: 0.15rem;
+    padding: 0.36rem 0.58rem;
+    font-size: 0.72rem;
+  }
+
+  .dialogue {
+    margin: 0 0.6rem 0.6rem;
+    padding: 0.95rem;
+    border-radius: 1rem;
+  }
+
+  .dialogue p {
+    font-size: 0.94rem;
+    line-height: 1.58;
+  }
+
+  .dialogueGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .dialogueItem {
+    padding: 0.68rem;
+  }
+
+  .dialogueItem p {
+    font-size: 0.88rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actor {
+    transition: none;
+  }
+}

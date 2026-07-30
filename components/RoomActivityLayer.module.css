@@ -1,0 +1,484 @@
+.layer {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.layer::before {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 38%;
+  background: linear-gradient(to bottom, transparent, rgb(22 19 15 / 22%));
+  content: "";
+  pointer-events: none;
+}
+
+.actor {
+  --activity-duration: 4s;
+  --activity-delay: 0s;
+
+  position: absolute;
+  z-index: 0;
+  bottom: 33%;
+  left: 12%;
+  width: clamp(48px, 8.4vw, 92px);
+  transform-origin: 50% 94%;
+  filter:
+    drop-shadow(0 7px 7px rgb(18 13 9 / 42%))
+    drop-shadow(0 1px 0 rgb(255 247 223 / 25%));
+  opacity: 0.96;
+  will-change: transform, opacity;
+}
+
+.actor img {
+  display: block;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: auto;
+  max-height: 148px;
+  object-fit: contain;
+  object-position: bottom center;
+}
+
+.actor.reverse img {
+  transform: scaleX(-1);
+}
+
+.slot1 {
+  left: 10%;
+}
+
+.slot2 {
+  left: 46%;
+}
+
+.slot3 {
+  left: 76%;
+}
+
+.strained .actor {
+  opacity: 0.88;
+  filter:
+    saturate(0.88)
+    drop-shadow(0 6px 7px rgb(18 13 9 / 42%));
+}
+
+.deficit .actor {
+  opacity: 0.76;
+  filter:
+    saturate(0.62)
+    drop-shadow(0 5px 7px rgb(18 13 9 / 44%));
+}
+
+.walk {
+  animation: walk-route var(--activity-duration) linear
+    var(--activity-delay) infinite both;
+}
+
+.carry {
+  animation: carry-route var(--activity-duration) linear
+    var(--activity-delay) infinite both;
+}
+
+.count {
+  animation: count-ledger var(--activity-duration) ease-in-out
+    var(--activity-delay) infinite both;
+}
+
+.bow {
+  animation: bow-report var(--activity-duration) ease-in-out
+    var(--activity-delay) infinite both;
+}
+
+.advise {
+  animation: advise-step var(--activity-duration) ease-in-out
+    var(--activity-delay) infinite both;
+}
+
+.listen {
+  animation: listen-shift var(--activity-duration) ease-in-out
+    var(--activity-delay) infinite both;
+}
+
+.haul {
+  animation: haul-timber var(--activity-duration) linear
+    var(--activity-delay) infinite both;
+}
+
+.hammer {
+  animation: hammer-work var(--activity-duration) ease-in-out
+    var(--activity-delay) infinite both;
+}
+
+.inspect {
+  animation: inspect-plans var(--activity-duration) ease-in-out
+    var(--activity-delay) infinite both;
+}
+
+.accessory {
+  display: block;
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.crate {
+  right: -16%;
+  bottom: 7%;
+  width: 48%;
+  aspect-ratio: 1.18;
+  border: 2px solid rgb(54 35 20 / 78%);
+  border-radius: 2px;
+  background:
+    linear-gradient(29deg, transparent 47%, rgb(84 55 28 / 58%) 48% 52%, transparent 53%),
+    linear-gradient(151deg, transparent 47%, rgb(84 55 28 / 58%) 48% 52%, transparent 53%),
+    linear-gradient(#a87942, #704722);
+  box-shadow:
+    inset 0 0 0 3px rgb(208 157 87 / 20%),
+    0 4px 6px rgb(21 14 9 / 34%);
+}
+
+.ledger {
+  right: -4%;
+  bottom: 31%;
+  width: 35%;
+  height: 23%;
+  border: 1px solid rgb(65 42 24 / 78%);
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 18%,
+      rgb(104 72 42 / 26%) 19% 21%
+    ),
+    #dccaa5;
+  transform: rotate(-8deg);
+  box-shadow: 0 3px 5px rgb(20 14 9 / 28%);
+}
+
+.plank {
+  right: -44%;
+  bottom: 28%;
+  width: 132%;
+  height: 8%;
+  border: 1px solid rgb(66 43 23 / 68%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6c4320, #ad7b3f 48%, #76502b);
+  box-shadow: 0 3px 4px rgb(22 14 8 / 28%);
+  transform: rotate(-9deg);
+}
+
+.accessory.hammer {
+  right: -6%;
+  bottom: 46%;
+  width: 8%;
+  height: 32%;
+  border-radius: 999px;
+  background: #694521;
+  transform: rotate(18deg);
+  transform-origin: 50% 90%;
+  animation: tool-strike var(--activity-duration) ease-in-out
+    var(--activity-delay) infinite both;
+}
+
+.accessory.hammer::after {
+  position: absolute;
+  top: -8%;
+  left: 50%;
+  width: 310%;
+  height: 24%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #413b33, #8b8170 52%, #3e3830);
+  box-shadow: 0 2px 3px rgb(17 12 8 / 32%);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.hall .slot1 {
+  bottom: 29%;
+}
+
+.hall .slot2 {
+  bottom: 34%;
+}
+
+.hall .slot3 {
+  bottom: 31%;
+}
+
+.treasury .slot1 {
+  bottom: 28%;
+}
+
+.treasury .slot2 {
+  bottom: 35%;
+}
+
+.treasury .slot3 {
+  bottom: 30%;
+}
+
+.council .slot1 {
+  bottom: 31%;
+  left: 16%;
+}
+
+.council .slot2 {
+  bottom: 32%;
+  left: 48%;
+}
+
+.council .slot3 {
+  bottom: 31%;
+  left: 75%;
+}
+
+.works .slot1 {
+  bottom: 27%;
+}
+
+.works .slot2 {
+  bottom: 30%;
+  left: 50%;
+}
+
+.works .slot3 {
+  bottom: 31%;
+}
+
+@keyframes walk-route {
+  0% {
+    transform: translateX(-13vw) translateY(0) scale(0.92);
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.96;
+  }
+  18% {
+    transform: translateX(-4vw) translateY(-3px) scale(0.96);
+  }
+  30% {
+    transform: translateX(3vw) translateY(2px) scale(0.96);
+  }
+  42% {
+    transform: translateX(10vw) translateY(-3px) scale(0.96);
+  }
+  54% {
+    transform: translateX(18vw) translateY(2px) scale(0.96);
+  }
+  66% {
+    transform: translateX(26vw) translateY(-3px) scale(0.96);
+  }
+  78% {
+    transform: translateX(34vw) translateY(2px) scale(0.96);
+  }
+  90% {
+    transform: translateX(42vw) translateY(-3px) scale(0.96);
+  }
+  92% {
+    opacity: 0.96;
+  }
+  100% {
+    transform: translateX(48vw) translateY(0) scale(0.92);
+    opacity: 0;
+  }
+}
+
+@keyframes carry-route {
+  0% {
+    transform: translateX(-10vw) translateY(1px) rotate(-1deg);
+    opacity: 0;
+  }
+  9%,
+  90% {
+    opacity: 0.94;
+  }
+  20% {
+    transform: translateX(1vw) translateY(-2px) rotate(1deg);
+  }
+  36% {
+    transform: translateX(10vw) translateY(2px) rotate(-1deg);
+  }
+  52% {
+    transform: translateX(19vw) translateY(-2px) rotate(1deg);
+  }
+  68% {
+    transform: translateX(28vw) translateY(2px) rotate(-1deg);
+  }
+  84% {
+    transform: translateX(37vw) translateY(-2px) rotate(1deg);
+  }
+  100% {
+    transform: translateX(45vw) translateY(1px) rotate(0);
+    opacity: 0;
+  }
+}
+
+@keyframes count-ledger {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  38% {
+    transform: translateY(-3px) rotate(-0.6deg);
+  }
+  52% {
+    transform: translateY(-2px) rotate(0.8deg);
+  }
+}
+
+@keyframes bow-report {
+  0%,
+  18%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  36%,
+  62% {
+    transform: translateY(5px) rotate(5deg) scaleY(0.95);
+  }
+}
+
+@keyframes advise-step {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  24%,
+  58% {
+    transform: translateX(5px) rotate(1.2deg);
+  }
+  74% {
+    transform: translateX(2px) rotate(-0.8deg);
+  }
+}
+
+@keyframes listen-shift {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  45% {
+    transform: translateY(-3px) rotate(-1.2deg);
+  }
+  62% {
+    transform: translateY(-2px) rotate(0.8deg);
+  }
+}
+
+@keyframes haul-timber {
+  0% {
+    transform: translateX(-12vw) translateY(0) rotate(-1deg);
+    opacity: 0;
+  }
+  9%,
+  90% {
+    opacity: 0.95;
+  }
+  25% {
+    transform: translateX(3vw) translateY(-3px) rotate(1.2deg);
+  }
+  42% {
+    transform: translateX(13vw) translateY(2px) rotate(-0.8deg);
+  }
+  58% {
+    transform: translateX(23vw) translateY(-3px) rotate(1.2deg);
+  }
+  75% {
+    transform: translateX(34vw) translateY(2px) rotate(-0.8deg);
+  }
+  100% {
+    transform: translateX(48vw) translateY(0) rotate(0);
+    opacity: 0;
+  }
+}
+
+@keyframes hammer-work {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  28%,
+  62% {
+    transform: translateY(3px) rotate(1.2deg);
+  }
+  42%,
+  76% {
+    transform: translateY(-2px) rotate(-0.8deg);
+  }
+}
+
+@keyframes tool-strike {
+  0%,
+  100% {
+    transform: rotate(24deg);
+  }
+  38% {
+    transform: rotate(-34deg);
+  }
+  58% {
+    transform: rotate(12deg);
+  }
+}
+
+@keyframes inspect-plans {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  36% {
+    transform: translateY(-3px) rotate(-1deg);
+  }
+  58% {
+    transform: translateY(-1px) rotate(1.1deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .actor {
+    bottom: 36%;
+    width: clamp(42px, 13vw, 60px);
+  }
+
+  .actor img {
+    max-height: 94px;
+  }
+
+  .slot1 {
+    left: 8%;
+  }
+
+  .slot2 {
+    left: 46%;
+  }
+
+  .slot3 {
+    left: 75%;
+  }
+
+  .council .slot1 {
+    left: 10%;
+  }
+
+  .council .slot2 {
+    left: 44%;
+  }
+
+  .council .slot3 {
+    left: 75%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actor,
+  .accessory.hammer {
+    animation: none;
+  }
+}
