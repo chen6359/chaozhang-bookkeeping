@@ -129,25 +129,25 @@ export const rankConfigs: readonly RankConfig[] = [
       hall: {
         ...roomConfigs.hall,
         name: "县衙大堂",
-        description: "本周期收支、消费池、县库账面和风险的主页总览。",
+        description: "查看本月可用金额、已记支出、当前结余和安全可花状态。",
         visualAnchor: "一进院、鼓架、三开间正堂和朴素公案。",
       },
       treasury: {
         ...roomConfigs.treasury,
         name: "县库账房",
-        description: "查看县库公式、流水和储蓄记录。",
+        description: "查看本月起始金额、已记流水、当前结余和安全可花额度。",
         visualAnchor: "木格账架、三只铁箍木箱、算盘桌和县库双锁。",
       },
       council: {
         ...roomConfigs.council,
         name: "县署议事厅",
-        description: "查看七天奏报、角色讨论和处理选择。",
+        description: "完成本周复盘，查看消费节奏并选择下周可执行的调整。",
         visualAnchor: "小型县境舆图、三席议事案、卷宗墙和侧窗灯。",
       },
       works: {
         ...roomConfigs.works,
         name: "营造后院",
-        description: "查看储蓄目标、县学藏书阁建设进度和空间解锁。",
+        description: "有效记账与完成复盘会推进县学藏书阁建设和空间解锁。",
         visualAnchor: "藏书阁基址、木料架、小脚手架和工匠案桌。",
       },
     },
@@ -177,25 +177,25 @@ export const rankConfigs: readonly RankConfig[] = [
       hall: {
         ...roomConfigs.hall,
         name: "州府大堂",
-        description: "本周期州府财政、府库账面和风险的主页总览。",
+        description: "查看本月可用金额、已记支出、当前结余和安全可花状态。",
         visualAnchor: "仪门、两重回廊、五开间正堂和州府印屏。",
       },
       treasury: {
         ...roomConfigs.treasury,
         name: "府库账房",
-        description: "查看府库公式、流水和储蓄记录。",
+        description: "查看本月起始金额、已记流水、当前结余和安全可花额度。",
         visualAnchor: "砖券库门、成排仓廒格、封签柜和大型总账案。",
       },
       council: {
         ...roomConfigs.council,
         name: "州府议事厅",
-        description: "查看七天奏报、正式府议和处理选择。",
+        description: "完成本周复盘，查看消费节奏并选择下周可执行的调整。",
         visualAnchor: "州境壁图、长案六席、幕僚侧案和议程屏。",
       },
       works: {
         ...roomConfigs.works,
         name: "营造院",
-        description: "查看储蓄目标、州学或桥渠建设阶段。",
+        description: "有效记账与完成复盘会推进州学或桥渠建设。",
         visualAnchor: "独立院门、图纸亭、材料棚和州学／桥渠模型。",
       },
     },
@@ -225,25 +225,25 @@ export const rankConfigs: readonly RankConfig[] = [
       hall: {
         ...roomConfigs.hall,
         name: "督府中堂",
-        description: "查看辖区财政、藩库账面和风险的主页总览。",
+        description: "查看本月可用金额、已记支出、当前结余和安全可花状态。",
         visualAnchor: "高台中堂、仪仗旗、辖地图亭和多进院轴线。",
       },
       treasury: {
         ...roomConfigs.treasury,
         name: "藩库账房",
-        description: "查看藩库公式、跨辖区流水和储蓄记录。",
+        description: "查看本月起始金额、已记流水、当前结余和安全可花额度。",
         visualAnchor: "石券库廊、铁包库门、区域分柜和转运车册。",
       },
       council: {
         ...roomConfigs.council,
         name: "督府议政厅",
-        description: "查看七天奏报、辖地复盘和处理选择。",
+        description: "完成本周复盘，查看消费节奏并选择下周可执行的调整。",
         visualAnchor: "区域沙盘、环形幕僚席、驿路线图和令箭架。",
       },
       works: {
         ...roomConfigs.works,
         name: "营造署",
-        description: "查看储蓄目标和区域工程建设进度。",
+        description: "有效记账与完成复盘会推进区域工程建设。",
         visualAnchor: "河道／道路沙盘、测量架、工程卷架和大型工棚。",
       },
     },
@@ -273,25 +273,25 @@ export const rankConfigs: readonly RankConfig[] = [
       hall: {
         ...roomConfigs.hall,
         name: "王府中枢堂",
-        description: "查看中枢财政、内库账面和风险的主页总览。",
+        description: "查看本月可用金额、已记支出、当前结余和安全可花状态。",
         visualAnchor: "三重门轴、中央政务案、监国印匣和无御座高屏。",
       },
       treasury: {
         ...roomConfigs.treasury,
         name: "内库账房",
-        description: "查看内库公式、全国性流水和储蓄记录。",
+        description: "查看本月起始金额、已记流水、当前结余和安全可花额度。",
         visualAnchor: "重檐库门、贡物名册柜、分署账案和四重封签。",
       },
       council: {
         ...roomConfigs.council,
         name: "政事堂",
-        description: "查看七天奏报、中枢复盘和处理选择。",
+        description: "完成本周复盘，查看消费节奏并选择下周可执行的调整。",
         visualAnchor: "天下舆图、八席大案、奏匣墙和时序漏刻。",
       },
       works: {
         ...roomConfigs.works,
         name: "将作监",
-        description: "查看储蓄目标、重大建设进度和空间解锁。",
+        description: "有效记账与完成复盘会推进重大建设和空间解锁。",
         visualAnchor: "城防／水利模型、匠作样册、尺度台和材料总署。",
       },
     },
@@ -321,25 +321,25 @@ export const rankConfigs: readonly RankConfig[] = [
       hall: {
         ...roomConfigs.hall,
         name: "正朝大殿",
-        description: "查看国库与天下财政、最高风险的主页总览。",
+        description: "查看本月可用金额、已记支出、当前结余和安全可花状态。",
         visualAnchor: "宫门远景、重檐大殿、御案和高阶百官列位。",
       },
       treasury: {
         ...roomConfigs.treasury,
         name: "国库总署",
-        description: "查看国库公式、全局流水和储蓄记录。",
+        description: "查看本月起始金额、已记流水、当前结余和安全可花额度。",
         visualAnchor: "宫墙内库门、分库印柜、封册台和护库仪仗。",
       },
       council: {
         ...roomConfigs.council,
         name: "议政殿",
-        description: "查看七天奏报、御前议政和处理选择。",
+        description: "完成本周复盘，查看消费节奏并选择下周可执行的调整。",
         visualAnchor: "巨幅天下舆图、御前长案、群臣席和奏章轨道。",
       },
       works: {
         ...roomConfigs.works,
         name: "将作院",
-        description: "查看储蓄目标、终阶建设和装饰解锁。",
+        description: "有效记账与完成复盘会推进终阶建设和装饰解锁。",
         visualAnchor: "宫城总模型、山河工程图、百工样架和总工台。",
       },
     },
@@ -488,7 +488,7 @@ export function getFiscalStateCopy(
 
   if (fiscalState === "deficit") {
     return {
-      label: `${config.treasuryName}告急`,
+      label: `${config.treasuryName}账面告急`,
       title: `${roomConfig.name}进入亏空状态`,
       description:
         room === "hall"
@@ -503,7 +503,7 @@ export function getFiscalStateCopy(
 
   if (fiscalState === "strained") {
     return {
-      label: "财政吃紧",
+      label: "安全可花收紧",
       title: `${roomConfig.name}开始收缩`,
       description:
         room === "hall"
@@ -517,8 +517,8 @@ export function getFiscalStateCopy(
   }
 
   return {
-    label: "财政丰盈",
-    title: `${roomConfig.name}运转充足`,
+    label: "账面稳健",
+    title: `${roomConfig.name}有序运转`,
     description:
       room === "hall"
         ? `${config.residenceName}建筑完整、陈设丰足、花木繁盛，人员与施工有序运转。`
