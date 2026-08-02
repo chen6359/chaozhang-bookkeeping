@@ -1641,9 +1641,7 @@ export default function Home() {
         {tab === "treasury" && (
           <div className="page-stack">
             <div className="page-title">
-              <span className="eyebrow">钱要算得清楚</span>
               <h1>{rankConfig.treasuryName}账房</h1>
-              <p>余额由已确认账目实时重算；修改或删除后不会保留旧数字。</p>
             </div>
             <WorldScene
               rank={rank}
@@ -1685,7 +1683,6 @@ export default function Home() {
             <section className="section-card">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">先为必须花的钱留位</span>
                   <h2>本月待付项目</h2>
                 </div>
               </div>
@@ -1750,7 +1747,6 @@ export default function Home() {
             <section className="section-card">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">从真实记录中看方向</span>
                   <h2>支出去向</h2>
                 </div>
               </div>
@@ -1783,7 +1779,6 @@ export default function Home() {
             <section className="section-card">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">用自然语言查账</span>
                   <h2>问账房</h2>
                 </div>
               </div>
@@ -1806,7 +1801,6 @@ export default function Home() {
             <section className="section-card">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">可改、可删、统一重算</span>
                   <h2>全部流水</h2>
                 </div>
                 <button className="primary-button compact" type="button" onClick={() => openRecorder()}>
@@ -1857,9 +1851,7 @@ export default function Home() {
         {tab === "council" && (
           <div className="page-stack">
             <div className="page-title">
-              <span className="eyebrow">不是重念数字，而是做一个决定</span>
               <h1>每日核对与周议事</h1>
-              <p>每天确认账目是否完整；每周只处理一个最值得调整的问题。</p>
             </div>
             <WorldScene
               rank={rank}
@@ -1908,7 +1900,6 @@ export default function Home() {
             <section className="section-card">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">可恢复，不断签惩罚</span>
                   <h2>核对记录</h2>
                 </div>
               </div>
@@ -1940,7 +1931,6 @@ export default function Home() {
               <section className="section-card">
                 <div className="section-heading">
                   <div>
-                    <span className="eyebrow">每次只留一个行动</span>
                     <h2>往期决定</h2>
                   </div>
                 </div>
@@ -1962,9 +1952,7 @@ export default function Home() {
         {tab === "build" && (
           <div className="page-stack">
             <div className="page-title">
-              <span className="eyebrow">真实习惯推动长期建设</span>
               <h1>建设与官阶</h1>
-              <p>金额改变眼前场景；有效核对和周复盘决定长期仕途。</p>
             </div>
             <WorldScene
               rank={rank}
@@ -2054,7 +2042,6 @@ export default function Home() {
           <section className="modal record-modal" role="dialog" aria-modal="true" aria-labelledby="record-title">
             <div className="modal-heading">
               <div>
-                <span className="eyebrow">先识别，你确认后才入账</span>
                 <h2 id="record-title">{pendingEntries[0]?.id ? "编辑这笔账" : "记一笔账"}</h2>
               </div>
               <button className="close-button" type="button" aria-label="关闭" onClick={() => setRecordOpen(false)}>
@@ -2367,7 +2354,6 @@ export default function Home() {
               <div className="scene-shade" />
               <div className="modal-heading">
                 <div>
-                  <span className="eyebrow">本周只做一个决定</span>
                   <h2>{latestReview?.weekKey === getCycleWeekKey() ? "本周议事备忘" : reviewIssue.title}</h2>
                 </div>
                 <button className="close-button dark" type="button" aria-label="关闭" onClick={() => setReviewOpen(false)}>
@@ -2503,7 +2489,6 @@ export default function Home() {
           <section className="modal settings-modal" role="dialog" aria-modal="true">
             <div className="modal-heading">
               <div>
-                <span className="eyebrow">只修改规则，不制造交易</span>
                 <h2>调整本周期设置</h2>
               </div>
               <button className="close-button" type="button" aria-label="关闭" onClick={() => setCycleSettingsOpen(false)}>

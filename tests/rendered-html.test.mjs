@@ -213,7 +213,8 @@ test("every navigation destination and central bookkeeping action is real", () =
 test("daily check and weekly decision are state-changing interactions", () => {
   assert.match(pageSource, /markTodayChecked/);
   assert.match(pageSource, /saveReviewAction/);
-  assert.match(pageSource, /本周只做一个决定/);
+  assert.match(pageSource, /开始本周议事/);
+  assert.match(pageSource, /本周决定已经保存/);
   assert.match(pageSource, /categoryReferences/);
 });
 
