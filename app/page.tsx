@@ -31,6 +31,17 @@ import {
   type ExpenseCategory,
   type LedgerDirection,
 } from "../lib/ledger";
+import {
+  createScreenshotRowKey,
+  isLikelyLedgerDuplicate,
+  type ScreenshotIssueCode,
+  type ScreenshotPlatform,
+} from "../lib/screenshot-import";
+import {
+  fingerprintScreenshotFile,
+  recognizeScreenshotLocally,
+  validateScreenshotFile,
+} from "../lib/screenshot-ocr-client";
 import { getNpcPortraitAsset } from "../lib/characters";
 import { getSceneMediaAsset } from "../lib/scene-media";
 import {
@@ -59,6 +70,11 @@ type LedgerItem = {
   date: LocalDateKey;
   createdAt: string;
   expenseClass: ExpenseClass;
+  source?: "manual" | "voice" | "text" | "screenshot";
+  importBatchId?: string;
+  importFingerprint?: string;
+  importRowKey?: string;
+  sourcePlatform?: ScreenshotPlatform;
 };
 
 type FixedCommitment = {
@@ -119,6 +135,37 @@ type PendingEntry = {
   expenseClass: ExpenseClass;
 };
 
+type RecordStage =
+  | "input"
+  | "confirm"
+  | "screenshot-consent"
+  | "screenshot-select"
+  | "screenshot-processing"
+  | "screenshot-review"
+  | "screenshot-success"
+  | "screenshot-error";
+
+type ScreenshotDraft = PendingEntry & {
+  tempId: string;
+  selected: boolean;
+  issueCodes: ScreenshotIssueCode[];
+  duplicateOfId?: string;
+  duplicateOverride: boolean;
+  importRowKey: string;
+  rawLine: string;
+};
+
+type ScreenshotImportSummary = {
+  batchId: string;
+  importedCount: number;
+  skippedCount: number;
+  entryIds: string[];
+  createdCheckDates: LocalDateKey[];
+  balanceBefore: number;
+  balanceAfter: number;
+  undone: boolean;
+};
+
 type FeedbackState = {
   title: string;
   fact: string;
@@ -161,6 +208,7 @@ type SpeechRecognitionLike = {
 const realStorageKey = "chaozhang-real-v4";
 const demoStorageKey = "chaozhang-demo-v4";
 const lastModeStorageKey = "chaozhang-last-mode-v4";
+const screenshotConsentStorageKey = "chaozhang-screenshot-consent-v1";
 const dayMs = 86_400_000;
 
 const tabRoom: Record<TabKey, RoomKey> = {
@@ -521,9 +569,22 @@ export default function Home() {
   const [cycleSettingsOpen, setCycleSettingsOpen] = useState(false);
   const [recordOpen, setRecordOpen] = useState(false);
   const [recordInput, setRecordInput] = useState("");
-  const [recordStage, setRecordStage] = useState<"input" | "confirm">("input");
+  const [recordStage, setRecordStage] = useState<RecordStage>("input");
   const [recordError, setRecordError] = useState("");
   const [pendingEntries, setPendingEntries] = useState<PendingEntry[]>([]);
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState("");
+  const [screenshotDrafts, setScreenshotDrafts] = useState<ScreenshotDraft[]>([]);
+  const [screenshotPlatform, setScreenshotPlatform] =
+    useState<ScreenshotPlatform>("其他账单");
+  const [screenshotFingerprint, setScreenshotFingerprint] = useState("");
+  const [screenshotRawText, setScreenshotRawText] = useState("");
+  const [screenshotProgress, setScreenshotProgress] = useState(0);
+  const [screenshotStatus, setScreenshotStatus] = useState("");
+  const [screenshotError, setScreenshotError] = useState("");
+  const [screenshotCommitting, setScreenshotCommitting] = useState(false);
+  const [screenshotSummary, setScreenshotSummary] =
+    useState<ScreenshotImportSummary | null>(null);
   const [voiceActive, setVoiceActive] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("");
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
@@ -536,6 +597,9 @@ export default function Home() {
   const [commitmentCategory, setCommitmentCategory] =
     useState<ExpenseCategory>("住房");
   const speechRef = useRef<SpeechRecognitionLike | null>(null);
+  const screenshotInputRef = useRef<HTMLInputElement | null>(null);
+  const screenshotAbortRef = useRef<AbortController | null>(null);
+  const screenshotCommitLockRef = useRef(false);
 
   useEffect(() => {
     const lastMode = localStorage.getItem(lastModeStorageKey);
@@ -573,6 +637,20 @@ export default function Home() {
     localStorage.setItem(key, JSON.stringify(book));
     localStorage.setItem(lastModeStorageKey, mode);
   }, [book, hydrated, mode]);
+
+  useEffect(
+    () => () => {
+      if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl);
+    },
+    [screenshotPreviewUrl],
+  );
+
+  useEffect(
+    () => () => {
+      screenshotAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const activeBook = book ?? createBlankBook();
   const snapshot = useMemo(
@@ -732,7 +810,38 @@ export default function Home() {
     }
   };
 
+  const clearScreenshotSource = () => {
+    screenshotAbortRef.current?.abort();
+    screenshotAbortRef.current = null;
+    setScreenshotFile(null);
+    setScreenshotPreviewUrl("");
+    setScreenshotRawText("");
+    setScreenshotProgress(0);
+    setScreenshotStatus("");
+    setScreenshotError("");
+    if (screenshotInputRef.current) screenshotInputRef.current.value = "";
+  };
+
+  const resetScreenshotImport = () => {
+    clearScreenshotSource();
+    setScreenshotDrafts([]);
+    setScreenshotPlatform("其他账单");
+    setScreenshotFingerprint("");
+    setScreenshotSummary(null);
+    setScreenshotCommitting(false);
+    screenshotCommitLockRef.current = false;
+  };
+
+  const closeRecorder = () => {
+    speechRef.current?.stop();
+    resetScreenshotImport();
+    setRecordOpen(false);
+    setRecordStage("input");
+    setRecordError("");
+  };
+
   const openRecorder = (entry?: LedgerItem) => {
+    resetScreenshotImport();
     setRecordError("");
     setVoiceStatus("");
     if (entry) {
@@ -755,6 +864,306 @@ export default function Home() {
       setRecordStage("input");
     }
     setRecordOpen(true);
+  };
+
+  const requestScreenshotFile = () => {
+    if (screenshotInputRef.current) {
+      screenshotInputRef.current.value = "";
+      screenshotInputRef.current.click();
+    }
+  };
+
+  const openScreenshotImport = () => {
+    setRecordError("");
+    setScreenshotError("");
+    if (localStorage.getItem(screenshotConsentStorageKey) === "accepted") {
+      setRecordStage("screenshot-select");
+      requestScreenshotFile();
+      return;
+    }
+    setRecordStage("screenshot-consent");
+  };
+
+  const acceptScreenshotConsent = () => {
+    localStorage.setItem(screenshotConsentStorageKey, "accepted");
+    setRecordStage("screenshot-select");
+    requestScreenshotFile();
+  };
+
+  const handleScreenshotFile = (file: File | null) => {
+    if (!file) return;
+    const validationError = validateScreenshotFile(file);
+    if (validationError) {
+      clearScreenshotSource();
+      setScreenshotError(validationError);
+      setRecordStage("screenshot-error");
+      return;
+    }
+    setScreenshotFile(file);
+    setScreenshotPreviewUrl(URL.createObjectURL(file));
+    setScreenshotError("");
+    setScreenshotDrafts([]);
+    setScreenshotSummary(null);
+    setRecordStage("screenshot-select");
+  };
+
+  const runScreenshotRecognition = async () => {
+    if (!screenshotFile || !book) {
+      setScreenshotError("请先选择一张微信或支付宝账单截图。");
+      setRecordStage("screenshot-error");
+      return;
+    }
+    const controller = new AbortController();
+    screenshotAbortRef.current?.abort();
+    screenshotAbortRef.current = controller;
+    setScreenshotProgress(0);
+    setScreenshotStatus("正在检查图片");
+    setScreenshotError("");
+    setRecordStage("screenshot-processing");
+    try {
+      const fingerprint = await fingerprintScreenshotFile(screenshotFile);
+      const result = await recognizeScreenshotLocally(
+        screenshotFile,
+        today,
+        ({ progress, label }) => {
+          setScreenshotProgress(progress);
+          setScreenshotStatus(label);
+        },
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      const drafts = result.candidates.map((candidate, index) => {
+        const duplicate = book.ledger.find((item) =>
+          isLikelyLedgerDuplicate(
+            item,
+            candidate.rowKey,
+            candidate,
+          ),
+        );
+        return {
+          tempId: `${fingerprint.slice(0, 12)}-${index}`,
+          direction: candidate.direction,
+          amount: candidate.amount,
+          category: candidate.category,
+          note: candidate.note,
+          date: candidate.date,
+          expenseClass:
+            candidate.direction === "支出" && candidate.category === "住房"
+              ? ("fixed" as const)
+              : ("variable" as const),
+          selected: !duplicate,
+          issueCodes: candidate.issueCodes,
+          duplicateOfId: duplicate?.id,
+          duplicateOverride: false,
+          importRowKey: candidate.rowKey,
+          rawLine: candidate.rawLine,
+        } satisfies ScreenshotDraft;
+      });
+      setScreenshotFingerprint(fingerprint);
+      setScreenshotPlatform(result.platform);
+      setScreenshotRawText(result.normalizedText);
+      setScreenshotDrafts(drafts);
+      setScreenshotFile(null);
+      setScreenshotPreviewUrl("");
+      if (drafts.length === 0) {
+        setScreenshotError(
+          "图片文字已经读取，但没有找到可靠金额。你可以把识别文字转到文字记账，或手动新增一笔。",
+        );
+        setRecordStage("screenshot-error");
+        return;
+      }
+      setRecordStage("screenshot-review");
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setScreenshotError(
+        error instanceof Error && error.message
+          ? `本机识别没有完成：${error.message}`
+          : "本机识别没有完成，请重试或改用文字记账。",
+      );
+      setRecordStage("screenshot-error");
+    } finally {
+      if (screenshotAbortRef.current === controller) {
+        screenshotAbortRef.current = null;
+      }
+    }
+  };
+
+  const cancelScreenshotRecognition = () => {
+    screenshotAbortRef.current?.abort();
+    screenshotAbortRef.current = null;
+    setScreenshotStatus("识别已取消，图片仍留在本次窗口中。");
+    setRecordStage("screenshot-select");
+  };
+
+  const updateScreenshotDraft = (
+    index: number,
+    patch: Partial<PendingEntry>,
+  ) => {
+    if (!book) return;
+    setScreenshotDrafts((items) =>
+      items.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        const next = { ...item, ...patch };
+        const importRowKey = createScreenshotRowKey(screenshotPlatform, next);
+        const duplicate = book.ledger.find((ledgerItem) =>
+          isLikelyLedgerDuplicate(ledgerItem, importRowKey, next),
+        );
+        const issueCodes = next.issueCodes.filter((issue) => {
+          if (issue === "note-needs-review" && next.note.trim()) return false;
+          if (issue === "date-needs-review" && patch.date) return false;
+          return true;
+        });
+        return {
+          ...next,
+          importRowKey,
+          issueCodes,
+          duplicateOfId: duplicate?.id,
+          duplicateOverride: false,
+          selected: duplicate ? false : next.selected,
+        };
+      }),
+    );
+  };
+
+  const sendScreenshotTextToRecorder = () => {
+    const recognized = screenshotRawText.trim();
+    clearScreenshotSource();
+    setScreenshotDrafts([]);
+    setRecordInput(recognized);
+    setRecordError(
+      recognized
+        ? "已保留识别文字，请修改后再识别为账目。"
+        : "请直接输入账目，例如：午饭32元。",
+    );
+    setRecordStage("input");
+  };
+
+  const addManualEntryFromScreenshot = () => {
+    clearScreenshotSource();
+    setScreenshotDrafts([]);
+    setPendingEntries([
+      {
+        direction: "支出",
+        amount: 0,
+        category: "其他",
+        note: "",
+        date: today,
+        expenseClass: "variable",
+      },
+    ]);
+    setRecordError("图片没有自动入账，请手动补全后确认。");
+    setRecordStage("confirm");
+  };
+
+  const confirmScreenshotImport = () => {
+    if (!book || screenshotCommitLockRef.current) return;
+    const selected = screenshotDrafts.filter((item) => item.selected);
+    if (selected.length === 0) {
+      setScreenshotError("请至少勾选一笔要导入的账目。");
+      return;
+    }
+    if (
+      selected.some(
+        (item) =>
+          !Number.isFinite(item.amount) ||
+          item.amount <= 0 ||
+          !item.note.trim() ||
+          !item.date ||
+          (item.duplicateOfId && !item.duplicateOverride),
+      )
+    ) {
+      setScreenshotError("请先补全金额、名称和日期，并处理重复提醒。");
+      return;
+    }
+    screenshotCommitLockRef.current = true;
+    setScreenshotCommitting(true);
+    const batchId = createId("screenshot-batch");
+    const now = new Date().toISOString();
+    const entryIds: string[] = [];
+    const newItems: LedgerItem[] = selected.map((entry) => {
+      const id = createId("ledger");
+      entryIds.push(id);
+      return {
+        id,
+        direction: entry.direction,
+        amount: entry.amount,
+        category: entry.direction === "收入" ? "收入" : entry.category,
+        note: entry.note.trim(),
+        date: entry.date,
+        createdAt: now,
+        expenseClass:
+          entry.direction === "收入" ? "variable" : entry.expenseClass,
+        source: "screenshot",
+        importBatchId: batchId,
+        importFingerprint: screenshotFingerprint,
+        importRowKey: createScreenshotRowKey(screenshotPlatform, entry),
+        sourcePlatform: screenshotPlatform,
+      };
+    });
+    const createdCheckDates = Array.from(
+      new Set(selected.map((item) => item.date)),
+    ).filter(
+      (dateKey) =>
+        !book.dailyChecks.some((check) => check.dateKey === dateKey),
+    );
+    const nextBook: BookState = {
+      ...book,
+      ledger: [...book.ledger, ...newItems],
+      dailyChecks: [
+        ...book.dailyChecks,
+        ...createdCheckDates.map((dateKey) => ({
+          dateKey,
+          checkedAt: null,
+          noSpendConfirmed: false,
+        })),
+      ],
+    };
+    const before = getFinanceSnapshot(book);
+    const after = getFinanceSnapshot(nextBook);
+    setBook(nextBook);
+    setScreenshotSummary({
+      batchId,
+      importedCount: newItems.length,
+      skippedCount: screenshotDrafts.length - newItems.length,
+      entryIds,
+      createdCheckDates,
+      balanceBefore: toYuan(before.ledgerBalanceCents),
+      balanceAfter: toYuan(after.ledgerBalanceCents),
+      undone: false,
+    });
+    setScreenshotRawText("");
+    setScreenshotDrafts([]);
+    setScreenshotError("");
+    setScreenshotCommitting(false);
+    screenshotCommitLockRef.current = false;
+    setRecordStage("screenshot-success");
+  };
+
+  const undoScreenshotImport = () => {
+    if (!book || !screenshotSummary || screenshotSummary.undone) return;
+    const ids = new Set(screenshotSummary.entryIds);
+    const nextLedger = book.ledger.filter(
+      (item) =>
+        !ids.has(item.id) &&
+        item.importBatchId !== screenshotSummary.batchId,
+    );
+    const nextChecks = book.dailyChecks.filter(
+      (check) =>
+        !screenshotSummary.createdCheckDates.includes(check.dateKey) ||
+        nextLedger.some((item) => item.date === check.dateKey),
+    );
+    setBook({ ...book, ledger: nextLedger, dailyChecks: nextChecks });
+    setScreenshotSummary({
+      ...screenshotSummary,
+      undone: true,
+      balanceAfter: toYuan(
+        getFinanceSnapshot({
+          ...book,
+          ledger: nextLedger,
+          dailyChecks: nextChecks,
+        }).ledgerBalanceCents,
+      ),
+    });
   };
 
   const recognizeEntries = () => {
@@ -2042,12 +2451,29 @@ export default function Home() {
           <section className="modal record-modal" role="dialog" aria-modal="true" aria-labelledby="record-title">
             <div className="modal-heading">
               <div>
-                <h2 id="record-title">{pendingEntries[0]?.id ? "编辑这笔账" : "记一笔账"}</h2>
+                <h2 id="record-title">
+                  {pendingEntries[0]?.id
+                    ? "编辑这笔账"
+                    : recordStage.startsWith("screenshot")
+                      ? "导入账单截图"
+                      : "记一笔账"}
+                </h2>
               </div>
-              <button className="close-button" type="button" aria-label="关闭" onClick={() => setRecordOpen(false)}>
+              <button className="close-button" type="button" aria-label="关闭" onClick={closeRecorder}>
                 ×
               </button>
             </div>
+            <input
+              ref={screenshotInputRef}
+              className="visually-hidden"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              aria-label="选择微信或支付宝账单截图"
+              onChange={(event) => {
+                handleScreenshotFile(event.currentTarget.files?.[0] ?? null);
+                event.currentTarget.value = "";
+              }}
+            />
             {recordStage === "input" ? (
               <>
                 <label className="record-textarea">
@@ -2087,8 +2513,17 @@ export default function Home() {
                 <button className="primary-button full" type="button" onClick={recognizeEntries}>
                   识别为账目
                 </button>
+                <div className="screenshot-entry">
+                  <div>
+                    <strong>有微信或支付宝账单截图？</strong>
+                    <p>本机读取多笔账，逐笔确认后才会入账。</p>
+                  </div>
+                  <button className="secondary-button" type="button" onClick={openScreenshotImport}>
+                    导入账单截图
+                  </button>
+                </div>
               </>
-            ) : (
+            ) : recordStage === "confirm" ? (
               <>
                 <p className="confirm-intro">
                   请检查金额、收支方向和日期。确认前不会改变账面。
@@ -2260,6 +2695,426 @@ export default function Home() {
                   </button>
                 </div>
               </>
+            ) : (
+              <div className="screenshot-flow">
+                {recordStage === "screenshot-consent" && (
+                  <section className="screenshot-consent">
+                    <span className="screenshot-seal" aria-hidden="true">图</span>
+                    <h3>先说明图片会怎样处理</h3>
+                    <ul>
+                      <li>识别在这台设备的浏览器内完成，图片不上传到朝账服务器。</li>
+                      <li>识别结果只生成待确认账目；你点击确认前，账面不会变化。</li>
+                      <li>识别完成后立即释放原图，只保存你确认入账的金额、分类和日期。</li>
+                    </ul>
+                    <div className="modal-actions stacked-mobile">
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => setRecordStage("input")}
+                      >
+                        返回
+                      </button>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={acceptScreenshotConsent}
+                      >
+                        同意并选择截图
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                {recordStage === "screenshot-select" && (
+                  <section className="screenshot-select">
+                    {screenshotPreviewUrl ? (
+                      <div className="screenshot-preview">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={screenshotPreviewUrl} alt="待识别账单截图预览" />
+                        <div>
+                          <strong>{screenshotFile?.name}</strong>
+                          <span>
+                            {screenshotFile
+                              ? `${(screenshotFile.size / 1024 / 1024).toFixed(1)} MB`
+                              : ""}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        className="screenshot-dropzone"
+                        type="button"
+                        onClick={requestScreenshotFile}
+                      >
+                        <span>＋</span>
+                        <strong>选择微信或支付宝账单截图</strong>
+                        <small>支持单笔详情、账单列表和长截图</small>
+                      </button>
+                    )}
+                    {screenshotStatus && (
+                      <p className="screenshot-hint">{screenshotStatus}</p>
+                    )}
+                    <p className="privacy-note">
+                      原图只停留在本次窗口；识别完成后立即释放。
+                    </p>
+                    <div className="modal-actions stacked-mobile">
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={requestScreenshotFile}
+                      >
+                        {screenshotFile ? "换一张" : "选择图片"}
+                      </button>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        disabled={!screenshotFile}
+                        onClick={runScreenshotRecognition}
+                      >
+                        开始本机识别
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                {recordStage === "screenshot-processing" && (
+                  <section className="screenshot-processing" aria-live="polite">
+                    <div className="processing-orbit" aria-hidden="true">
+                      <span>账</span>
+                    </div>
+                    <h3>{screenshotStatus || "正在本机识别"}</h3>
+                    <p>第一次使用会加载中文模型，可能需要稍等；账面仍未改变。</p>
+                    <div
+                      className="screenshot-progress"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(screenshotProgress * 100)}
+                    >
+                      <span style={{ width: `${Math.round(screenshotProgress * 100)}%` }} />
+                    </div>
+                    <strong>{Math.round(screenshotProgress * 100)}%</strong>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={cancelScreenshotRecognition}
+                    >
+                      取消识别
+                    </button>
+                  </section>
+                )}
+
+                {recordStage === "screenshot-review" && (
+                  <>
+                    <div className="screenshot-review-heading">
+                      <div>
+                        <span>{screenshotPlatform}</span>
+                        <strong>识别出 {screenshotDrafts.length} 笔待确认账目</strong>
+                        <small>原图已释放 · 确认前不改变账面</small>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setScreenshotDrafts((items) =>
+                            items.map((item) => ({
+                              ...item,
+                              selected:
+                                !item.duplicateOfId || item.duplicateOverride,
+                            })),
+                          )
+                        }
+                      >
+                        选择全部可用
+                      </button>
+                    </div>
+                    <div className="screenshot-draft-list">
+                      {screenshotDrafts.map((entry, index) => {
+                        const unresolvedDuplicate =
+                          Boolean(entry.duplicateOfId) && !entry.duplicateOverride;
+                        return (
+                          <article
+                            key={entry.tempId}
+                            className={`${entry.selected ? "selected" : ""} ${
+                              unresolvedDuplicate ? "duplicate" : ""
+                            }`}
+                          >
+                            <div className="screenshot-draft-topline">
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={entry.selected}
+                                  disabled={unresolvedDuplicate}
+                                  onChange={(event) =>
+                                    setScreenshotDrafts((items) =>
+                                      items.map((item, itemIndex) =>
+                                        itemIndex === index
+                                          ? { ...item, selected: event.target.checked }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                                <strong>第 {index + 1} 笔</strong>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setScreenshotDrafts((items) =>
+                                    items.filter((_, itemIndex) => itemIndex !== index),
+                                  )
+                                }
+                              >
+                                移除
+                              </button>
+                            </div>
+                            {(entry.issueCodes.length > 0 || unresolvedDuplicate) && (
+                              <div className="screenshot-warnings">
+                                {unresolvedDuplicate && <span>疑似已记过，默认不选</span>}
+                                {entry.issueCodes.includes("note-needs-review") && (
+                                  <span>请补充名称</span>
+                                )}
+                                {entry.issueCodes.includes("date-needs-review") && (
+                                  <span>日期取今天，请核对</span>
+                                )}
+                                {entry.issueCodes.includes("transfer-needs-review") && (
+                                  <span>转账方向请核对</span>
+                                )}
+                              </div>
+                            )}
+                            {unresolvedDuplicate && (
+                              <button
+                                className="duplicate-override"
+                                type="button"
+                                onClick={() =>
+                                  setScreenshotDrafts((items) =>
+                                    items.map((item, itemIndex) =>
+                                      itemIndex === index
+                                        ? {
+                                            ...item,
+                                            duplicateOverride: true,
+                                            selected: true,
+                                          }
+                                        : item,
+                                    ),
+                                  )
+                                }
+                              >
+                                这是一笔新账，仍然导入
+                              </button>
+                            )}
+                            <div className="draft-fields">
+                              <label>
+                                <span>方向</span>
+                                <select
+                                  value={entry.direction}
+                                  onChange={(event) => {
+                                    const direction = event.target.value as LedgerDirection;
+                                    updateScreenshotDraft(index, {
+                                      direction,
+                                      category:
+                                        direction === "收入"
+                                          ? "收入"
+                                          : entry.category === "收入"
+                                            ? "其他"
+                                            : entry.category,
+                                    });
+                                  }}
+                                >
+                                  <option value="支出">支出</option>
+                                  <option value="收入">收入</option>
+                                </select>
+                              </label>
+                              <label>
+                                <span>金额</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  inputMode="decimal"
+                                  value={entry.amount || ""}
+                                  onChange={(event) =>
+                                    updateScreenshotDraft(index, {
+                                      amount: Number(event.target.value),
+                                    })
+                                  }
+                                />
+                              </label>
+                              <label className="wide">
+                                <span>账目名称</span>
+                                <input
+                                  value={entry.note}
+                                  onChange={(event) =>
+                                    updateScreenshotDraft(index, {
+                                      note: event.target.value,
+                                    })
+                                  }
+                                />
+                              </label>
+                              <label>
+                                <span>分类</span>
+                                <select
+                                  value={entry.category}
+                                  disabled={entry.direction === "收入"}
+                                  onChange={(event) =>
+                                    updateScreenshotDraft(index, {
+                                      category: event.target.value as ExpenseCategory,
+                                    })
+                                  }
+                                >
+                                  {entry.direction === "收入" && (
+                                    <option value="收入">收入</option>
+                                  )}
+                                  {expenseCategories.map((category) => (
+                                    <option key={category} value={category}>
+                                      {category}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                <span>日期</span>
+                                <input
+                                  type="date"
+                                  value={entry.date}
+                                  onChange={(event) =>
+                                    updateScreenshotDraft(index, {
+                                      date: event.target.value as LocalDateKey,
+                                    })
+                                  }
+                                />
+                              </label>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                    {screenshotError && (
+                      <p className="form-error" role="alert">{screenshotError}</p>
+                    )}
+                    <div className="modal-actions stacked-mobile">
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => {
+                          resetScreenshotImport();
+                          setRecordStage("screenshot-select");
+                          requestScreenshotFile();
+                        }}
+                      >
+                        重新选择
+                      </button>
+                      <button
+                        className="primary-button"
+                        type="button"
+                        disabled={
+                          screenshotCommitting ||
+                          !screenshotDrafts.some((entry) => entry.selected)
+                        }
+                        onClick={confirmScreenshotImport}
+                      >
+                        {screenshotCommitting
+                          ? "正在入账"
+                          : `确认导入 ${
+                              screenshotDrafts.filter((entry) => entry.selected).length
+                            } 笔`}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {recordStage === "screenshot-error" && (
+                  <section className="screenshot-error-state">
+                    <span aria-hidden="true">未</span>
+                    <h3>这次没有自动入账</h3>
+                    <p role="alert">
+                      {screenshotError || "没有识别出可靠账目，请换图或手动记账。"}
+                    </p>
+                    <div className="screenshot-error-actions">
+                      {screenshotFile && (
+                        <button
+                          className="primary-button"
+                          type="button"
+                          onClick={runScreenshotRecognition}
+                        >
+                          重试本机识别
+                        </button>
+                      )}
+                      {screenshotRawText.trim() && (
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={sendScreenshotTextToRecorder}
+                        >
+                          转到文字记账
+                        </button>
+                      )}
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={requestScreenshotFile}
+                      >
+                        换一张截图
+                      </button>
+                      <button
+                        className="text-button"
+                        type="button"
+                        onClick={addManualEntryFromScreenshot}
+                      >
+                        手动新增一笔
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                {recordStage === "screenshot-success" && screenshotSummary && (
+                  <section className="screenshot-success" aria-live="polite">
+                    <span className={screenshotSummary.undone ? "undone" : ""}>
+                      {screenshotSummary.undone ? "撤" : "成"}
+                    </span>
+                    <h3>
+                      {screenshotSummary.undone
+                        ? "本批账目已撤销"
+                        : `已导入 ${screenshotSummary.importedCount} 笔账`}
+                    </h3>
+                    <p>
+                      {screenshotSummary.undone
+                        ? "只撤销了本次截图导入，其他手动账目没有变化。"
+                        : `跳过 ${screenshotSummary.skippedCount} 笔未选或疑似重复账目。`}
+                    </p>
+                    <div className="import-balance-change">
+                      <div>
+                        <span>导入前账面</span>
+                        <strong>{formatMoney(screenshotSummary.balanceBefore)}</strong>
+                      </div>
+                      <b>→</b>
+                      <div>
+                        <span>{screenshotSummary.undone ? "撤销后账面" : "导入后账面"}</span>
+                        <strong>{formatMoney(screenshotSummary.balanceAfter)}</strong>
+                      </div>
+                    </div>
+                    <div className="modal-actions stacked-mobile">
+                      {!screenshotSummary.undone && (
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={undoScreenshotImport}
+                        >
+                          撤销本批导入
+                        </button>
+                      )}
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={() => {
+                          closeRecorder();
+                          setTab("treasury");
+                        }}
+                      >
+                        查看账本
+                      </button>
+                    </div>
+                  </section>
+                )}
+              </div>
             )}
           </section>
         </div>

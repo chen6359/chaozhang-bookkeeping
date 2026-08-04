@@ -14,6 +14,10 @@ import {
   inferLedgerClassification,
   parseLedgerText,
 } from "../lib/ledger.ts";
+import {
+  isLikelyLedgerDuplicate,
+  parseScreenshotText,
+} from "../lib/screenshot-import.ts";
 import { getSceneMediaAsset } from "../lib/scene-media.ts";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
@@ -41,6 +45,92 @@ test("savings wording is no longer classified as a transaction", () => {
     direction: "支出",
     category: "其他",
   });
+});
+
+test("WeChat single-payment screenshot text becomes a reviewable draft", () => {
+  const parsed = parseScreenshotText(
+    ["微信支付", "美团外卖", "今天 12:30", "-¥32.00"].join("\n"),
+    "2026-08-04",
+  );
+  assert.equal(parsed.platform, "微信支付");
+  assert.equal(parsed.candidates.length, 1);
+  assert.deepEqual(
+    {
+      direction: parsed.candidates[0].direction,
+      amount: parsed.candidates[0].amount,
+      category: parsed.candidates[0].category,
+      note: parsed.candidates[0].note,
+      date: parsed.candidates[0].date,
+    },
+    {
+      direction: "支出",
+      amount: 32,
+      category: "餐饮",
+      note: "美团外卖",
+      date: "2026-08-04",
+    },
+  );
+});
+
+test("Alipay list screenshot text keeps multiple dates and directions", () => {
+  const parsed = parseScreenshotText(
+    [
+      "支付宝账单",
+      "麦当劳",
+      "8月1日 12:40",
+      "-25.50",
+      "兼职工资到账",
+      "8月2日 18:00",
+      "+200.00",
+    ].join("\n"),
+    "2026-08-04",
+  );
+  assert.equal(parsed.platform, "支付宝");
+  assert.deepEqual(
+    parsed.candidates.map(({ direction, amount, date }) => ({
+      direction,
+      amount,
+      date,
+    })),
+    [
+      { direction: "支出", amount: 25.5, date: "2026-08-01" },
+      { direction: "收入", amount: 200, date: "2026-08-02" },
+    ],
+  );
+});
+
+test("screenshot duplicate detection uses import key or reviewed ledger fields", () => {
+  const parsed = parseScreenshotText(
+    ["微信支付", "地铁", "8月4日 09:00", "-¥4.00"].join("\n"),
+    "2026-08-04",
+  );
+  const candidate = parsed.candidates[0];
+  assert.equal(
+    isLikelyLedgerDuplicate(
+      {
+        direction: "支出",
+        amount: 4,
+        note: "地铁",
+        date: "2026-08-04",
+      },
+      candidate.rowKey,
+      candidate,
+    ),
+    true,
+  );
+  assert.equal(
+    isLikelyLedgerDuplicate(
+      {
+        direction: "支出",
+        amount: 4,
+        note: "公交",
+        date: "2026-08-04",
+      },
+      candidate.rowKey,
+      candidate,
+    ),
+    false,
+  );
 });
 
 test("ledger balance and safe-to-spend are independent", () => {
@@ -199,6 +289,21 @@ test("recording requires review before confirmation and has voice fallback", () 
   assert.match(pageSource, /确认入账/);
   assert.match(pageSource, /SpeechRecognition/);
   assert.match(pageSource, /当前浏览器不支持语音识别/);
+});
+
+test("screenshot import is local, confirm-first, duplicate-aware and undoable", () => {
+  for (const label of [
+    "导入账单截图",
+    "开始本机识别",
+    "确认前不改变账面",
+    "疑似已记过，默认不选",
+    "撤销本批导入",
+  ]) {
+    assert.match(pageSource, new RegExp(label));
+  }
+  assert.match(pageSource, /source: "screenshot"/);
+  assert.match(pageSource, /importBatchId/);
+  assert.match(pageSource, /importRowKey/);
 });
 
 test("every navigation destination and central bookkeeping action is real", () => {
