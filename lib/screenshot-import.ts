@@ -3,6 +3,10 @@ import {
   type ExpenseCategory,
   type LedgerDirection,
 } from "./ledger.ts";
+import {
+  resolveCurrencyAroundAmount,
+  type CurrencyCode,
+} from "./currency.ts";
 import type { LocalDateKey } from "./habit.ts";
 
 export type ScreenshotPlatform = "微信支付" | "支付宝" | "其他账单";
@@ -10,11 +14,13 @@ export type ScreenshotPlatform = "微信支付" | "支付宝" | "其他账单";
 export type ScreenshotIssueCode =
   | "note-needs-review"
   | "date-needs-review"
-  | "transfer-needs-review";
+  | "transfer-needs-review"
+  | "currency-needs-review";
 
 export type ScreenshotCandidate = {
   direction: LedgerDirection;
   amount: number;
+  currency: CurrencyCode;
   category: ExpenseCategory | "收入";
   note: string;
   date: LocalDateKey;
@@ -30,7 +36,7 @@ const platformOnlyRule = /^(微信支付|微信账单|支付宝|支付宝账单|
 const dateOnlyRule =
   /^(?:\d{4}[年./-])?\d{1,2}[月./-]\d{1,2}(?:日)?(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/;
 const amountPattern =
-  /(?<sign>[+-])?\s*(?<currency>[¥￥])?\s*(?<amount>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*(?<yuan>元)?/g;
+  /(?<sign>[+-])?\s*(?<currency>[¥￥₩])?\s*(?<amount>(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*(?<unit>人民币|韩元|韩币|元|원)?/g;
 
 function normalizeLine(value: string): string {
   return value
@@ -112,7 +118,13 @@ function isMeaningfulNoteLine(line: string): boolean {
   if (!line || platformOnlyRule.test(line) || dateOnlyRule.test(line)) return false;
   if (/^(今天|昨天|昨日)\s*\d{0,2}:?\d{0,2}/.test(line)) return false;
   if (paymentMetadataRule.test(line) || amountLabelRule.test(line)) return false;
-  if (/^[+-]?[¥￥]?\s*\d+(?:\.\d{1,2})?\s*元?$/.test(line)) return false;
+  if (
+    /^(?:人民币|韩元|韩币)?\s*[+-]?[¥￥₩]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?\s*(?:人民币|韩元|韩币|元|원)?$/.test(
+      line,
+    )
+  ) {
+    return false;
+  }
   return /[\p{L}]/u.test(line);
 }
 
@@ -137,8 +149,17 @@ function isPlausibleAmountMatch(
   match: RegExpExecArray,
 ): boolean {
   const groups = match.groups ?? {};
+  const currencyResult = resolveCurrencyAroundAmount(
+    fullLine,
+    match.index,
+    match.index + token.length,
+  );
   const hasExplicitSignal = Boolean(
-    groups.sign || groups.currency || groups.yuan || token.includes("."),
+    groups.sign ||
+      groups.currency ||
+      groups.unit ||
+      currencyResult.explicit ||
+      token.includes("."),
   );
   const hasAmountContext = amountLabelRule.test(fullLine);
   if (!hasExplicitSignal && !hasAmountContext) return false;
@@ -158,6 +179,7 @@ function cleanNote(line: string, token: string): string {
       .replace(token, " ")
       .replace(amountLabelRule, " ")
       .replace(/支付成功|交易成功|付款成功|收款成功|已完成/g, " ")
+      .replace(/人民币|韩元|韩币|[¥￥₩]/g, " ")
       .replace(/[：:·]/g, " "),
   );
 }
@@ -166,13 +188,14 @@ export function createScreenshotRowKey(
   platform: ScreenshotPlatform,
   candidate: Pick<
     ScreenshotCandidate,
-    "date" | "direction" | "amount" | "note"
+    "date" | "direction" | "amount" | "currency" | "note"
   >,
 ): string {
   return [
     platform,
     candidate.date,
     candidate.direction,
+    candidate.currency,
     Math.round(candidate.amount * 100),
     normalizeKeyPart(candidate.note),
   ].join("|");
@@ -181,6 +204,7 @@ export function createScreenshotRowKey(
 export function parseScreenshotText(
   rawText: string,
   fallbackDate: LocalDateKey,
+  fallbackCurrency: CurrencyCode = "CNY",
 ): {
   platform: ScreenshotPlatform;
   candidates: ScreenshotCandidate[];
@@ -210,8 +234,16 @@ export function parseScreenshotText(
     while (match) {
       const token = match[0];
       if (isPlausibleAmountMatch(line, token, match)) {
+        const currencyResult = resolveCurrencyAroundAmount(
+          line,
+          match.index,
+          match.index + token.length,
+          fallbackCurrency,
+        );
         const amount = Number((match.groups?.amount ?? "").replace(/,/g, ""));
-        if (Number.isFinite(amount) && amount > 0 && amount < 10_000_000) {
+        const maximumAmount =
+          currencyResult.currency === "KRW" ? 10_000_000_000 : 10_000_000;
+        if (Number.isFinite(amount) && amount > 0 && amount < maximumAmount) {
           const nearby = findNearbyNote(lines, lineIndex);
           const noteFromLine = cleanNote(line, token);
           const note =
@@ -236,12 +268,16 @@ export function parseScreenshotText(
           const issueCodes: ScreenshotIssueCode[] = [];
           if (note === "待确认账目") issueCodes.push("note-needs-review");
           if (dateResult.inferred) issueCodes.push("date-needs-review");
+          if (!currencyResult.explicit || currencyResult.ambiguous) {
+            issueCodes.push("currency-needs-review");
+          }
           if (/转账|转入|转出|收款/.test(context)) {
             issueCodes.push("transfer-needs-review");
           }
           const base = {
             direction,
             amount,
+            currency: currencyResult.currency,
             category:
               direction === "收入" ? ("收入" as const) : classification.category,
             note,
@@ -271,6 +307,7 @@ export function isLikelyLedgerDuplicate(
   existing: {
     direction: LedgerDirection;
     amount: number;
+    currency?: CurrencyCode;
     note: string;
     date: LocalDateKey;
     importRowKey?: string;
@@ -278,13 +315,14 @@ export function isLikelyLedgerDuplicate(
   rowKey: string,
   candidate: Pick<
     ScreenshotCandidate,
-    "date" | "direction" | "amount" | "note"
+    "date" | "direction" | "amount" | "currency" | "note"
   >,
 ): boolean {
   if (existing.importRowKey && existing.importRowKey === rowKey) return true;
   return (
     existing.date === candidate.date &&
     existing.direction === candidate.direction &&
+    (existing.currency ?? "CNY") === candidate.currency &&
     Math.round(existing.amount * 100) === Math.round(candidate.amount * 100) &&
     normalizeKeyPart(existing.note) === normalizeKeyPart(candidate.note)
   );

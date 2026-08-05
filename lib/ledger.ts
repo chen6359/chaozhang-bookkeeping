@@ -1,3 +1,8 @@
+import {
+  resolveCurrencyAroundAmount,
+  type CurrencyCode,
+} from "./currency.ts";
+
 export const expenseCategories = [
   "餐饮",
   "住房",
@@ -21,6 +26,7 @@ export type LedgerClassification = {
 export type ParsedLedgerDraft = LedgerClassification & {
   amount: number;
   note: string;
+  currency: CurrencyCode;
 };
 
 export type LedgerLike = {
@@ -58,26 +64,43 @@ export function inferLedgerClassification(text: string): LedgerClassification {
 function normalizeNote(text: string, amountToken: string): string {
   const note = text
     .replace(amountToken, "")
-    .replace(/[¥￥元块钱]/g, "")
+    .replace(/人民币|韩元|韩币|[¥￥₩]|块钱?/g, "")
+    .replace(/\s*(?:元|원)\s*$/, "")
     .replace(/^(今天|昨日|昨天|刚刚|刚才|我|花了|支付|支出|收入)\s*/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return note || "未命名账目";
 }
 
-function parseChunk(chunk: string): ParsedLedgerDraft[] {
+function parseChunk(
+  chunk: string,
+  fallbackCurrency: CurrencyCode,
+): ParsedLedgerDraft[] {
   const trimmed = chunk.trim();
   if (!trimmed) return [];
 
-  const numberMatches = [...trimmed.matchAll(/[-+]?\d+(?:\.\d{1,2})?/g)];
+  const numberMatches = [
+    ...trimmed.matchAll(
+      /[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?/g,
+    ),
+  ];
   if (numberMatches.length === 0) return [];
 
   if (numberMatches.length === 1) {
     const token = numberMatches[0][0];
-    const amount = Math.abs(Number(token));
+    const amount = Math.abs(Number(token.replace(/,/g, "")));
     if (!Number.isFinite(amount) || amount <= 0) return [];
     const note = normalizeNote(trimmed, token);
-    return [{ ...inferLedgerClassification(trimmed), amount, note }];
+    const start = numberMatches[0].index ?? 0;
+    const { currency } = resolveCurrencyAroundAmount(
+      trimmed,
+      start,
+      start + token.length,
+      fallbackCurrency,
+    );
+    return [
+      { ...inferLedgerClassification(trimmed), amount, note, currency },
+    ];
   }
 
   const drafts: ParsedLedgerDraft[] = [];
@@ -99,15 +122,22 @@ function parseChunk(chunk: string): ParsedLedgerDraft[] {
       .trim();
     const suffix = trimmed
       .slice(currentIndex + token.length, nextStart)
-      .replace(/^[¥￥元块钱\s]+/, "")
+      .replace(/^(?:\s|人民币|韩元|韩币|[¥￥₩]|元|원|块钱?)+/, "")
       .trim();
     const phrase = `${prefix || suffix || "未命名账目"} ${token}`.trim();
-    const amount = Math.abs(Number(token));
+    const amount = Math.abs(Number(token.replace(/,/g, "")));
     if (Number.isFinite(amount) && amount > 0) {
+      const { currency } = resolveCurrencyAroundAmount(
+        trimmed,
+        currentIndex,
+        currentIndex + token.length,
+        fallbackCurrency,
+      );
       drafts.push({
         ...inferLedgerClassification(phrase),
         amount,
         note: normalizeNote(phrase, token),
+        currency,
       });
     }
   });
@@ -119,11 +149,15 @@ function parseChunk(chunk: string): ParsedLedgerDraft[] {
  * AI may later improve semantics, but confirmation always happens before these
  * drafts enter the ledger.
  */
-export function parseLedgerText(text: string): ParsedLedgerDraft[] {
+export function parseLedgerText(
+  text: string,
+  fallbackCurrency: CurrencyCode = "CNY",
+): ParsedLedgerDraft[] {
   const chunks = text
+    .replace(/(\d),(?=\d{3}(?:\D|$))/g, "$1")
     .replace(/[。！？!?]/g, "\n")
     .split(/[\n,，;；]+/)
-    .flatMap((chunk) => parseChunk(chunk));
+    .flatMap((chunk) => parseChunk(chunk, fallbackCurrency));
 
   return chunks.slice(0, 20);
 }

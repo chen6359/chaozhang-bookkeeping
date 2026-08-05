@@ -1,4 +1,5 @@
 import { parseScreenshotText } from "./screenshot-import.ts";
+import type { CurrencyCode } from "./currency.ts";
 import type { LocalDateKey } from "./habit.ts";
 
 export type ScreenshotOcrProgress = {
@@ -76,6 +77,7 @@ export async function recognizeScreenshotLocally(
   fallbackDate: LocalDateKey,
   onProgress: (progress: ScreenshotOcrProgress) => void,
   signal?: AbortSignal,
+  fallbackCurrency: CurrencyCode = "CNY",
 ): Promise<ScreenshotOcrResult> {
   const validationError = validateScreenshotFile(file);
   if (validationError) throw new Error(validationError);
@@ -127,7 +129,7 @@ export async function recognizeScreenshotLocally(
     const rawText = orderedLines.length > 0 ? orderedLines.join("\n") : data.text;
     onProgress({ progress: 1, label: "识别完成，正在整理账目" });
     return {
-      ...parseScreenshotText(rawText, fallbackDate),
+      ...parseScreenshotText(rawText, fallbackDate, fallbackCurrency),
       imageWidth: width,
       imageHeight: height,
     };

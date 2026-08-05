@@ -117,13 +117,13 @@ export const npcCharacterFamilies: Record<
   },
   "companion-female": {
     id: "female-companion",
-    identity: "女性伴侣",
+    identity: "随行知己",
     age: "与主角共同成长",
     build: "温和自然",
   },
   "companion-male": {
     id: "male-companion",
-    identity: "男性伴侣",
+    identity: "随行知己",
     age: "与主角共同成长",
     build: "温和自然",
   },

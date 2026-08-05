@@ -15,13 +15,45 @@ import {
   parseLedgerText,
 } from "../lib/ledger.ts";
 import {
+  formatCurrencyMoney,
+  inferCurrencyCode,
+  isValidCurrencyAmount,
+} from "../lib/currency.ts";
+import {
   isLikelyLedgerDuplicate,
   parseScreenshotText,
 } from "../lib/screenshot-import.ts";
 import { getSceneMediaAsset } from "../lib/scene-media.ts";
+import {
+  getNpcPortraitAsset,
+  npcCharacterFamilies,
+} from "../lib/characters.ts";
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+test("companion routes use one user-facing identity without changing asset families", () => {
+  assert.equal(npcCharacterFamilies["companion-female"].identity, "随行知己");
+  assert.equal(npcCharacterFamilies["companion-male"].identity, "随行知己");
+
+  const femaleCompanion = getNpcPortraitAsset(
+    "companion",
+    "county",
+    "男性",
+    "success",
+  );
+  const maleCompanion = getNpcPortraitAsset(
+    "companion",
+    "county",
+    "女性",
+    "warning",
+  );
+
+  assert.equal(femaleCompanion.route, "companion-female");
+  assert.equal(maleCompanion.route, "companion-male");
+  assert.equal(femaleCompanion.identity, "随行知己");
+  assert.equal(maleCompanion.identity, "随行知己");
+});
 
 test("ledger language parser splits multiple confirmed drafts", () => {
   const drafts = parseLedgerText("午饭32元，地铁4元，工资到账3000元");
@@ -36,6 +68,47 @@ test("ledger language parser splits multiple confirmed drafts", () => {
       { direction: "支出", amount: 32, category: "餐饮" },
       { direction: "支出", amount: 4, category: "交通" },
       { direction: "收入", amount: 3000, category: "收入" },
+    ],
+  );
+});
+
+test("currency formatting and precision rules keep CNY and KRW distinct", () => {
+  assert.equal(formatCurrencyMoney(1234.5, "CNY"), "¥1,234.5");
+  assert.equal(formatCurrencyMoney(-1234, "KRW"), "−₩1,234");
+  assert.equal(formatCurrencyMoney(32, "CNY", true), "+¥32");
+  assert.equal(inferCurrencyCode("午饭32元", "KRW"), "CNY");
+  assert.equal(inferCurrencyCode("점심 12000원", "CNY"), "KRW");
+  assert.equal(isValidCurrencyAmount(12.34, "CNY"), true);
+  assert.equal(isValidCurrencyAmount(12.345, "CNY"), false);
+  assert.equal(isValidCurrencyAmount(12_000, "KRW"), true);
+  assert.equal(isValidCurrencyAmount(12.5, "KRW"), false);
+  assert.equal(isValidCurrencyAmount(-5, "CNY"), false);
+  assert.equal(
+    isValidCurrencyAmount(-5, "CNY", { allowNegative: true }),
+    true,
+  );
+});
+
+test("ledger language parser recognizes mixed explicit currencies and fallback", () => {
+  const drafts = parseLedgerText(
+    "午饭¥32，地铁₩4,000，咖啡18",
+    "KRW",
+  );
+  assert.deepEqual(
+    drafts.map(({ amount, currency }) => ({ amount, currency })),
+    [
+      { amount: 32, currency: "CNY" },
+      { amount: 4000, currency: "KRW" },
+      { amount: 18, currency: "KRW" },
+    ],
+  );
+  assert.deepEqual(
+    parseLedgerText("生活用品人民币88；交通费5000韩元").map(
+      ({ amount, currency }) => ({ amount, currency }),
+    ),
+    [
+      { amount: 88, currency: "CNY" },
+      { amount: 5000, currency: "KRW" },
     ],
   );
 });
@@ -130,6 +203,71 @@ test("screenshot duplicate detection uses import key or reviewed ledger fields",
       candidate,
     ),
     false,
+  );
+});
+
+test("KRW screenshot candidates keep currency in review and duplicate identity", () => {
+  const parsed = parseScreenshotText(
+    ["카카오페이", "점심", "8月4日 12:30", "-₩12,000"].join("\n"),
+    "2026-08-04",
+    "CNY",
+  );
+  assert.equal(parsed.candidates.length, 1);
+  const candidate = parsed.candidates[0];
+  assert.deepEqual(
+    {
+      amount: candidate.amount,
+      currency: candidate.currency,
+      note: candidate.note,
+    },
+    {
+      amount: 12_000,
+      currency: "KRW",
+      note: "점심",
+    },
+  );
+  assert.equal(candidate.issueCodes.includes("currency-needs-review"), false);
+  assert.equal(
+    isLikelyLedgerDuplicate(
+      {
+        direction: candidate.direction,
+        amount: candidate.amount,
+        currency: "CNY",
+        note: candidate.note,
+        date: candidate.date,
+      },
+      candidate.rowKey,
+      candidate,
+    ),
+    false,
+  );
+  assert.equal(
+    isLikelyLedgerDuplicate(
+      {
+        direction: candidate.direction,
+        amount: candidate.amount,
+        currency: "KRW",
+        note: candidate.note,
+        date: candidate.date,
+      },
+      candidate.rowKey,
+      candidate,
+    ),
+    true,
+  );
+});
+
+test("screenshot amount without a marker uses fallback currency and asks for review", () => {
+  const parsed = parseScreenshotText(
+    ["其他账单", "便利店", "交易金额 12000"].join("\n"),
+    "2026-08-04",
+    "KRW",
+  );
+  assert.equal(parsed.candidates.length, 1);
+  assert.equal(parsed.candidates[0].currency, "KRW");
+  assert.equal(
+    parsed.candidates[0].issueCodes.includes("currency-needs-review"),
+    true,
   );
 });
 
@@ -329,4 +467,25 @@ test("responsive visual foundation has blurred imagery and mobile layouts", () =
   assert.match(styleSource, /@media \(max-width: 640px\)/);
   assert.match(styleSource, /@media \(max-width: 390px\)/);
   assert.match(styleSource, /\.bottom-nav/);
+});
+
+test("dual-currency books stay separate throughout the page flow", () => {
+  assert.match(pageSource, /chaozhang-real-v5/);
+  assert.match(pageSource, /currencyMeta\[currency\]\.label\}开销/);
+  assert.match(pageSource, /不同币种不会相加/);
+  assert.match(pageSource, /getFinanceSnapshot\(activeBook, "CNY"\)/);
+  assert.match(pageSource, /getFinanceSnapshot\(activeBook, "KRW"\)/);
+});
+
+test("past calendar dates open a real backfill flow", () => {
+  assert.match(pageSource, /openRecorder\(undefined, dateKey\)/);
+  assert.match(pageSource, /补记 \$\{recordTargetDate\.slice\(5\)\}/);
+  assert.match(pageSource, /确认 \{recordTargetDate\.slice\(5\)\} 无支出/);
+});
+
+test("fixed commitments explain their purpose and collect category plus currency", () => {
+  assert.match(pageSource, /填写具体款项，例如房租、电话费、健身房月费/);
+  assert.match(pageSource, /固定支出分类/);
+  assert.match(pageSource, /固定支出币种/);
+  assert.match(pageSource, /实际支付后不会重复扣减/);
 });

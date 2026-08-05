@@ -32,6 +32,13 @@ import {
   type LedgerDirection,
 } from "../lib/ledger";
 import {
+  currencyCodes,
+  currencyMeta,
+  formatCurrencyMoney,
+  isValidCurrencyAmount,
+  type CurrencyCode,
+} from "../lib/currency";
+import {
   createScreenshotRowKey,
   isLikelyLedgerDuplicate,
   type ScreenshotIssueCode,
@@ -70,6 +77,7 @@ type LedgerItem = {
   date: LocalDateKey;
   createdAt: string;
   expenseClass: ExpenseClass;
+  currency: CurrencyCode;
   source?: "manual" | "voice" | "text" | "screenshot";
   importBatchId?: string;
   importFingerprint?: string;
@@ -83,6 +91,7 @@ type FixedCommitment = {
   amount: number;
   category: ExpenseCategory;
   paid: boolean;
+  currency: CurrencyCode;
 };
 
 type DailyCheck = {
@@ -98,16 +107,22 @@ type WeeklyReview = {
   actionLabel: string;
   category?: ExpenseCategory;
   amount?: number;
+  currency: CurrencyCode;
 };
 
-type Profile = {
-  name: string;
-  presentation: "男性" | "女性";
+type CurrencyAccount = {
   fundingLabel: "生活费" | "工资" | "本月可用资金";
   openingFunds: number;
   carriedBalance: number;
   usableCarryover: number;
   desiredRetention: number;
+};
+
+type Profile = {
+  name: string;
+  presentation: "男性" | "女性";
+  defaultCurrency: CurrencyCode;
+  accounts: Record<CurrencyCode, CurrencyAccount>;
   cycleStartDate: LocalDateKey;
   cycleEndDate: LocalDateKey;
   reminderEnabled: boolean;
@@ -116,13 +131,16 @@ type Profile = {
 };
 
 type BookState = {
-  version: 4;
+  version: 5;
   profile: Profile;
   ledger: LedgerItem[];
   fixedCommitments: FixedCommitment[];
   dailyChecks: DailyCheck[];
   weeklyReviews: WeeklyReview[];
-  categoryReferences: Partial<Record<ExpenseCategory, number>>;
+  categoryReferences: Record<
+    CurrencyCode,
+    Partial<Record<ExpenseCategory, number>>
+  >;
 };
 
 type PendingEntry = {
@@ -133,6 +151,7 @@ type PendingEntry = {
   note: string;
   date: LocalDateKey;
   expenseClass: ExpenseClass;
+  currency: CurrencyCode;
 };
 
 type RecordStage =
@@ -161,31 +180,40 @@ type ScreenshotImportSummary = {
   skippedCount: number;
   entryIds: string[];
   createdCheckDates: LocalDateKey[];
-  balanceBefore: number;
-  balanceAfter: number;
+  balanceChanges: Partial<
+    Record<CurrencyCode, { before: number; after: number }>
+  >;
   undone: boolean;
 };
 
 type FeedbackState = {
   title: string;
   fact: string;
-  balance: number;
-  safeToSpend: number;
+  accounts: Partial<
+    Record<CurrencyCode, { balance: number; safeToSpend: number }>
+  >;
   fiscalState: FiscalState;
+};
+
+type CurrencyAccountDraft = {
+  fundingLabel: CurrencyAccount["fundingLabel"];
+  openingFunds: string;
+  carriedBalance: string;
+  usableCarryover: string;
+  desiredRetention: string;
 };
 
 type SetupDraft = {
   name: string;
   presentation: "男性" | "女性";
-  fundingLabel: "生活费" | "工资" | "本月可用资金";
-  openingFunds: string;
-  carriedBalance: string;
-  usableCarryover: string;
-  desiredRetention: string;
+  defaultCurrency: CurrencyCode;
+  accounts: Record<CurrencyCode, CurrencyAccountDraft>;
   cycleStartDate: LocalDateKey;
   cycleEndDate: LocalDateKey;
   fixedName: string;
   fixedAmount: string;
+  fixedCategory: ExpenseCategory;
+  fixedCurrency: CurrencyCode;
   reminderEnabled: boolean;
   reminderTime: string;
 };
@@ -205,9 +233,12 @@ type SpeechRecognitionLike = {
   stop: () => void;
 };
 
-const realStorageKey = "chaozhang-real-v4";
-const demoStorageKey = "chaozhang-demo-v4";
-const lastModeStorageKey = "chaozhang-last-mode-v4";
+const realStorageKey = "chaozhang-real-v5";
+const demoStorageKey = "chaozhang-demo-v5";
+const lastModeStorageKey = "chaozhang-last-mode-v5";
+const legacyRealStorageKey = "chaozhang-real-v4";
+const legacyDemoStorageKey = "chaozhang-demo-v4";
+const legacyLastModeStorageKey = "chaozhang-last-mode-v4";
 const screenshotConsentStorageKey = "chaozhang-screenshot-consent-v1";
 const dayMs = 86_400_000;
 
@@ -230,16 +261,7 @@ const categoryCourtNames: Record<ExpenseCategory, string> = {
   其他: "杂项房",
 };
 
-const moneyFormatter = new Intl.NumberFormat("zh-CN", {
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
-
-function formatMoney(value: number, withSign = false): string {
-  const normalized = Math.abs(value) < 0.005 ? 0 : value;
-  const sign = normalized < 0 ? "−" : withSign && normalized > 0 ? "+" : "";
-  return `${sign}¥${moneyFormatter.format(Math.abs(normalized))}`;
-}
+const formatMoney = formatCurrencyMoney;
 
 function toCents(value: number): number {
   return Math.round((Number.isFinite(value) ? value : 0) * 100);
@@ -275,18 +297,30 @@ function getCurrentCycleDates(now = new Date()): {
   };
 }
 
+function createEmptyCurrencyAccount(
+  fundingLabel: CurrencyAccount["fundingLabel"] = "生活费",
+): CurrencyAccount {
+  return {
+    fundingLabel,
+    openingFunds: 0,
+    carriedBalance: 0,
+    usableCarryover: 0,
+    desiredRetention: 0,
+  };
+}
+
 function createBlankBook(): BookState {
   const cycle = getCurrentCycleDates();
   return {
-    version: 4,
+    version: 5,
     profile: {
       name: "",
       presentation: "女性",
-      fundingLabel: "生活费",
-      openingFunds: 0,
-      carriedBalance: 0,
-      usableCarryover: 0,
-      desiredRetention: 0,
+      defaultCurrency: "CNY",
+      accounts: {
+        CNY: createEmptyCurrencyAccount("生活费"),
+        KRW: createEmptyCurrencyAccount("生活费"),
+      },
       cycleStartDate: cycle.start,
       cycleEndDate: cycle.end,
       reminderEnabled: false,
@@ -297,7 +331,7 @@ function createBlankBook(): BookState {
     fixedCommitments: [],
     dailyChecks: [],
     weeklyReviews: [],
-    categoryReferences: {},
+    categoryReferences: { CNY: {}, KRW: {} },
   };
 }
 
@@ -314,6 +348,7 @@ function createDemoBook(): BookState {
       date: shiftDate(today, -3),
       createdAt: new Date().toISOString(),
       expenseClass: "variable",
+      currency: "CNY",
     },
     {
       id: "demo-lunch",
@@ -324,6 +359,7 @@ function createDemoBook(): BookState {
       date: shiftDate(today, -2),
       createdAt: new Date().toISOString(),
       expenseClass: "variable",
+      currency: "CNY",
     },
     {
       id: "demo-metro",
@@ -334,6 +370,7 @@ function createDemoBook(): BookState {
       date: shiftDate(today, -2),
       createdAt: new Date().toISOString(),
       expenseClass: "variable",
+      currency: "CNY",
     },
     {
       id: "demo-book",
@@ -344,6 +381,7 @@ function createDemoBook(): BookState {
       date: shiftDate(today, -1),
       createdAt: new Date().toISOString(),
       expenseClass: "variable",
+      currency: "CNY",
     },
     {
       id: "demo-friends",
@@ -354,20 +392,33 @@ function createDemoBook(): BookState {
       date: today,
       createdAt: new Date().toISOString(),
       expenseClass: "variable",
+      currency: "CNY",
     },
   ];
   const demoDates = [today, shiftDate(today, -1), shiftDate(today, -2), shiftDate(today, -3)];
 
   return {
-    version: 4,
+    version: 5,
     profile: {
       name: "小林",
       presentation: "女性",
-      fundingLabel: "生活费",
-      openingFunds: 3000,
-      carriedBalance: 200,
-      usableCarryover: 0,
-      desiredRetention: 500,
+      defaultCurrency: "CNY",
+      accounts: {
+        CNY: {
+          fundingLabel: "生活费",
+          openingFunds: 3000,
+          carriedBalance: 200,
+          usableCarryover: 0,
+          desiredRetention: 500,
+        },
+        KRW: {
+          fundingLabel: "生活费",
+          openingFunds: 500_000,
+          carriedBalance: 0,
+          usableCarryover: 0,
+          desiredRetention: 100_000,
+        },
+      },
       cycleStartDate: cycle.start,
       cycleEndDate: cycle.end,
       reminderEnabled: true,
@@ -382,6 +433,7 @@ function createDemoBook(): BookState {
         amount: 900,
         category: "住房",
         paid: false,
+        currency: "CNY",
       },
     ],
     dailyChecks: demoDates.map((dateKey) => ({
@@ -390,26 +442,152 @@ function createDemoBook(): BookState {
       noSpendConfirmed: false,
     })),
     weeklyReviews: [],
-    categoryReferences: {},
+    categoryReferences: { CNY: {}, KRW: {} },
+  };
+}
+
+function normalizeCurrencyAccount(
+  value: Partial<CurrencyAccount> | undefined,
+  fallbackLabel: CurrencyAccount["fundingLabel"] = "生活费",
+): CurrencyAccount {
+  return {
+    fundingLabel:
+      value?.fundingLabel === "工资" ||
+      value?.fundingLabel === "本月可用资金"
+        ? value.fundingLabel
+        : fallbackLabel,
+    openingFunds: Number(value?.openingFunds) || 0,
+    carriedBalance: Number(value?.carriedBalance) || 0,
+    usableCarryover: Math.max(0, Number(value?.usableCarryover) || 0),
+    desiredRetention: Math.max(0, Number(value?.desiredRetention) || 0),
+  };
+}
+
+function migrateBookState(raw: unknown): BookState | null {
+  if (!raw || typeof raw !== "object") return null;
+  const source = raw as Record<string, unknown>;
+  const profile = source.profile as Record<string, unknown> | undefined;
+  if (!profile) return null;
+
+  if (source.version === 5) {
+    const candidate = source as unknown as BookState;
+    const defaultCurrency: CurrencyCode =
+      candidate.profile.defaultCurrency === "KRW" ? "KRW" : "CNY";
+    return {
+      ...candidate,
+      version: 5,
+      profile: {
+        ...candidate.profile,
+        defaultCurrency,
+        accounts: {
+          CNY: normalizeCurrencyAccount(candidate.profile.accounts?.CNY),
+          KRW: normalizeCurrencyAccount(candidate.profile.accounts?.KRW),
+        },
+      },
+      ledger: (candidate.ledger ?? []).map((item) => ({
+        ...item,
+        currency: item.currency === "KRW" ? "KRW" : "CNY",
+      })),
+      fixedCommitments: (candidate.fixedCommitments ?? []).map((item) => ({
+        ...item,
+        currency: item.currency === "KRW" ? "KRW" : "CNY",
+      })),
+      weeklyReviews: (candidate.weeklyReviews ?? []).map((item) => ({
+        ...item,
+        currency: item.currency === "KRW" ? "KRW" : "CNY",
+      })),
+      categoryReferences: {
+        CNY: candidate.categoryReferences?.CNY ?? {},
+        KRW: candidate.categoryReferences?.KRW ?? {},
+      },
+    };
+  }
+
+  if (source.version !== 4) return null;
+  const legacy = source as {
+    profile: Record<string, unknown>;
+    ledger?: Array<Record<string, unknown>>;
+    fixedCommitments?: Array<Record<string, unknown>>;
+    dailyChecks?: DailyCheck[];
+    weeklyReviews?: Array<Record<string, unknown>>;
+    categoryReferences?: Partial<Record<ExpenseCategory, number>>;
+  };
+  return {
+    version: 5,
+    profile: {
+      name: String(legacy.profile.name ?? ""),
+      presentation: legacy.profile.presentation === "男性" ? "男性" : "女性",
+      defaultCurrency: "CNY",
+      accounts: {
+        CNY: normalizeCurrencyAccount(
+          {
+            fundingLabel:
+              legacy.profile.fundingLabel as CurrencyAccount["fundingLabel"],
+            openingFunds: Number(legacy.profile.openingFunds) || 0,
+            carriedBalance: Number(legacy.profile.carriedBalance) || 0,
+            usableCarryover: Number(legacy.profile.usableCarryover) || 0,
+            desiredRetention: Number(legacy.profile.desiredRetention) || 0,
+          },
+          "生活费",
+        ),
+        KRW: createEmptyCurrencyAccount("生活费"),
+      },
+      cycleStartDate:
+        (legacy.profile.cycleStartDate as LocalDateKey) ??
+        getCurrentCycleDates().start,
+      cycleEndDate:
+        (legacy.profile.cycleEndDate as LocalDateKey) ??
+        getCurrentCycleDates().end,
+      reminderEnabled: Boolean(legacy.profile.reminderEnabled),
+      reminderTime: String(legacy.profile.reminderTime ?? "21:30"),
+      onboarded: Boolean(legacy.profile.onboarded),
+    },
+    ledger: (legacy.ledger ?? []).map((item) => ({
+      ...(item as unknown as Omit<LedgerItem, "currency">),
+      currency: "CNY",
+    })),
+    fixedCommitments: (legacy.fixedCommitments ?? []).map((item) => ({
+      ...(item as unknown as Omit<FixedCommitment, "currency">),
+      currency: "CNY",
+    })),
+    dailyChecks: legacy.dailyChecks ?? [],
+    weeklyReviews: (legacy.weeklyReviews ?? []).map((item) => ({
+      ...(item as unknown as Omit<WeeklyReview, "currency">),
+      currency: "CNY",
+    })),
+    categoryReferences: {
+      CNY: legacy.categoryReferences ?? {},
+      KRW: {},
+    },
   };
 }
 
 function createSetupDraft(book: BookState): SetupDraft {
   const unpaid = book.fixedCommitments.find((item) => !item.paid);
+  const accountDraft = (currency: CurrencyCode): CurrencyAccountDraft => {
+    const account = book.profile.accounts[currency];
+    return {
+      fundingLabel: account.fundingLabel,
+      openingFunds: account.openingFunds ? String(account.openingFunds) : "",
+      carriedBalance: String(account.carriedBalance || 0),
+      usableCarryover: String(account.usableCarryover || 0),
+      desiredRetention: String(account.desiredRetention || 0),
+    };
+  };
   return {
     name: book.profile.name,
     presentation: book.profile.presentation,
-    fundingLabel: book.profile.fundingLabel,
-    openingFunds: book.profile.openingFunds
-      ? String(book.profile.openingFunds)
-      : "",
-    carriedBalance: String(book.profile.carriedBalance || 0),
-    usableCarryover: String(book.profile.usableCarryover || 0),
-    desiredRetention: String(book.profile.desiredRetention || 0),
+    defaultCurrency: book.profile.defaultCurrency,
+    accounts: {
+      CNY: accountDraft("CNY"),
+      KRW: accountDraft("KRW"),
+    },
     cycleStartDate: book.profile.cycleStartDate,
     cycleEndDate: book.profile.cycleEndDate,
     fixedName: unpaid?.name ?? "",
     fixedAmount: unpaid ? String(unpaid.amount) : "",
+    fixedCategory: unpaid?.category ?? "住房",
+    fixedCurrency: unpaid?.currency ?? book.profile.defaultCurrency,
     reminderEnabled: book.profile.reminderEnabled,
     reminderTime: book.profile.reminderTime,
   };
@@ -430,8 +608,14 @@ function getCycleProgress(profile: Profile): {
   return { elapsedDays, totalDays };
 }
 
-function getFinanceSnapshot(book: BookState): FinanceSnapshot {
-  const transactions: FinanceTransaction[] = book.ledger.map((item) =>
+function getFinanceSnapshot(
+  book: BookState,
+  currency: CurrencyCode,
+): FinanceSnapshot {
+  const account = book.profile.accounts[currency];
+  const transactions: FinanceTransaction[] = book.ledger
+    .filter((item) => item.currency === currency)
+    .map((item) =>
     item.direction === "收入"
       ? { kind: "income", amountCents: toCents(item.amount) }
       : {
@@ -439,22 +623,22 @@ function getFinanceSnapshot(book: BookState): FinanceSnapshot {
           amountCents: toCents(item.amount),
           expenseClass: item.expenseClass,
         },
-  );
+    );
   const unpaidFixedExpense = book.fixedCommitments
-    .filter((item) => !item.paid)
+    .filter((item) => !item.paid && item.currency === currency)
     .reduce((sum, item) => sum + item.amount, 0);
   const cycle = getCycleProgress(book.profile);
 
   return calculateFinance({
-    carriedBalanceCents: toCents(book.profile.carriedBalance),
-    openingFundsCents: toCents(book.profile.openingFunds),
+    carriedBalanceCents: toCents(account.carriedBalance),
+    openingFundsCents: toCents(account.openingFunds),
     usableCarryoverCents: toCents(
       Math.min(
-        Math.max(0, book.profile.carriedBalance),
-        Math.max(0, book.profile.usableCarryover),
+        Math.max(0, account.carriedBalance),
+        Math.max(0, account.usableCarryover),
       ),
     ),
-    desiredRetentionCents: toCents(book.profile.desiredRetention),
+    desiredRetentionCents: toCents(account.desiredRetention),
     unpaidFixedExpenseCents: toCents(unpaidFixedExpense),
     transactions,
     elapsedDays: cycle.elapsedDays,
@@ -472,11 +656,24 @@ function getHabitCheckIns(book: BookState): DailyCheckIn[] {
 }
 
 function getHabitReviews(book: BookState): HabitWeeklyReview[] {
-  return book.weeklyReviews.map((review) => ({
-    weekKey: review.weekKey as HabitWeeklyReview["weekKey"],
-    completedAt: review.completedAt,
-    selectedActionId: review.selectedActionId,
-  }));
+  const latestByWeek = new Map<string, HabitWeeklyReview>();
+  book.weeklyReviews.forEach((review) => {
+    const normalized: HabitWeeklyReview = {
+      weekKey: review.weekKey as HabitWeeklyReview["weekKey"],
+      completedAt: review.completedAt,
+      selectedActionId: review.selectedActionId,
+    };
+    const existing = latestByWeek.get(review.weekKey);
+    if (
+      !existing ||
+      (normalized.completedAt ?? "").localeCompare(
+        existing.completedAt ?? "",
+      ) > 0
+    ) {
+      latestByWeek.set(review.weekKey, normalized);
+    }
+  });
+  return [...latestByWeek.values()];
 }
 
 function getSceneStyle(snapshot: FinanceSnapshot): FiscalStateKey {
@@ -501,11 +698,13 @@ function WorldScene({
   room,
   fiscalState,
   balance,
+  currency,
 }: {
   rank: RankKey;
   room: RoomKey;
   fiscalState: FiscalStateKey;
   balance: number;
+  currency: CurrencyCode;
 }) {
   const rankConfig = getRankConfig(rank);
   const roomConfig = getRoomConfig(rank, room);
@@ -526,8 +725,8 @@ function WorldScene({
         <p>{stateCopy.description}</p>
       </div>
       <div className="scene-balance">
-        <span>{rankConfig.treasuryName}账面</span>
-        <strong>{formatMoney(balance)}</strong>
+        <span>{rankConfig.treasuryName}账面 · {currencyMeta[currency].label}</span>
+        <strong>{formatMoney(balance, currency)}</strong>
       </div>
     </section>
   );
@@ -561,6 +760,8 @@ export default function Home() {
   const [book, setBook] = useState<BookState | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [tab, setTab] = useState<TabKey>("home");
+  const [activeCurrency, setActiveCurrency] =
+    useState<CurrencyCode>("CNY");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupDraft, setSetupDraft] = useState<SetupDraft>(() =>
     createSetupDraft(createBlankBook()),
@@ -571,6 +772,8 @@ export default function Home() {
   const [recordInput, setRecordInput] = useState("");
   const [recordStage, setRecordStage] = useState<RecordStage>("input");
   const [recordError, setRecordError] = useState("");
+  const [recordTargetDate, setRecordTargetDate] =
+    useState<LocalDateKey>(() => getLocalDateKey());
   const [pendingEntries, setPendingEntries] = useState<PendingEntry[]>([]);
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotPreviewUrl, setScreenshotPreviewUrl] = useState("");
@@ -596,25 +799,32 @@ export default function Home() {
   const [commitmentAmount, setCommitmentAmount] = useState("");
   const [commitmentCategory, setCommitmentCategory] =
     useState<ExpenseCategory>("住房");
+  const [commitmentCurrency, setCommitmentCurrency] =
+    useState<CurrencyCode>("CNY");
+  const [commitmentError, setCommitmentError] = useState("");
   const speechRef = useRef<SpeechRecognitionLike | null>(null);
   const screenshotInputRef = useRef<HTMLInputElement | null>(null);
   const screenshotAbortRef = useRef<AbortController | null>(null);
   const screenshotCommitLockRef = useRef(false);
 
   useEffect(() => {
-    const lastMode = localStorage.getItem(lastModeStorageKey);
+    const lastMode =
+      localStorage.getItem(lastModeStorageKey) ??
+      localStorage.getItem(legacyLastModeStorageKey);
     let nextMode: Mode | null = null;
     let nextBook: BookState | null = null;
     if (lastMode === "real" || lastMode === "demo") {
       const key = lastMode === "real" ? realStorageKey : demoStorageKey;
-      const stored = localStorage.getItem(key);
+      const legacyKey =
+        lastMode === "real" ? legacyRealStorageKey : legacyDemoStorageKey;
+      const stored =
+        localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
       nextMode = lastMode;
       nextBook =
         lastMode === "real" ? createBlankBook() : createDemoBook();
       if (stored) {
         try {
-          const parsed = JSON.parse(stored) as BookState;
-          if (parsed.version === 4) nextBook = parsed;
+          nextBook = migrateBookState(JSON.parse(stored)) ?? nextBook;
         } catch {
           localStorage.removeItem(key);
         }
@@ -624,6 +834,8 @@ export default function Home() {
       if (nextMode && nextBook) {
         setMode(nextMode);
         setBook(nextBook);
+        setActiveCurrency(nextBook.profile.defaultCurrency);
+        setCommitmentCurrency(nextBook.profile.defaultCurrency);
         setSetupDraft(createSetupDraft(nextBook));
       }
       setHydrated(true);
@@ -653,10 +865,14 @@ export default function Home() {
   );
 
   const activeBook = book ?? createBlankBook();
-  const snapshot = useMemo(
-    () => getFinanceSnapshot(activeBook),
+  const snapshots = useMemo(
+    () => ({
+      CNY: getFinanceSnapshot(activeBook, "CNY"),
+      KRW: getFinanceSnapshot(activeBook, "KRW"),
+    }),
     [activeBook],
   );
+  const snapshot = snapshots[activeCurrency];
   const habitCheckIns = useMemo(
     () => getHabitCheckIns(activeBook),
     [activeBook],
@@ -664,6 +880,17 @@ export default function Home() {
   const habitReviews = useMemo(
     () => getHabitReviews(activeBook),
     [activeBook],
+  );
+  const activeCurrencyHabitReviews = useMemo(
+    () =>
+      activeBook.weeklyReviews
+        .filter((review) => review.currency === activeCurrency)
+        .map((review) => ({
+          weekKey: review.weekKey as HabitWeeklyReview["weekKey"],
+          completedAt: review.completedAt,
+          selectedActionId: review.selectedActionId,
+        })),
+    [activeBook.weeklyReviews, activeCurrency],
   );
   const habitProgress = useMemo(
     () => getHabitProgress(habitCheckIns, habitReviews),
@@ -674,13 +901,37 @@ export default function Home() {
     [habitCheckIns],
   );
   const reviewAvailability = useMemo(
-    () =>
-      getWeeklyReviewAvailability({
+    () => {
+      const availability = getWeeklyReviewAvailability({
         checkIns: habitCheckIns,
-        reviews: habitReviews,
+        reviews: activeCurrencyHabitReviews,
         minimumValidDays: mode === "demo" ? 1 : 4,
-      }),
-    [habitCheckIns, habitReviews, mode],
+      });
+      const activeCurrencyEntryCount = activeBook.ledger.filter(
+        (item) =>
+          item.currency === activeCurrency &&
+          getCycleWeekKey(item.date) === availability.weekKey,
+      ).length;
+      if (availability.canOpen && activeCurrencyEntryCount < 1) {
+        return {
+          ...availability,
+          canOpen: false as const,
+          reason: "no-ledger-data" as const,
+          confirmedEntryCount: 0,
+        };
+      }
+      return {
+        ...availability,
+        confirmedEntryCount: activeCurrencyEntryCount,
+      };
+    },
+    [
+      activeBook.ledger,
+      activeCurrency,
+      activeCurrencyHabitReviews,
+      habitCheckIns,
+      mode,
+    ],
   );
   const rank = habitProgress.rank.key as RankKey;
   const gender: CharacterGender =
@@ -690,8 +941,13 @@ export default function Home() {
   const rankConfig = getRankConfig(rank);
   const portrait = getRankPortraitAsset(rank, gender, fiscalState);
   const categoryTotals = useMemo(
-    () => calculateExpenseByCategory(activeBook.ledger),
-    [activeBook.ledger],
+    () =>
+      calculateExpenseByCategory(
+        activeBook.ledger.filter(
+          (item) => item.currency === activeCurrency,
+        ),
+      ),
+    [activeBook.ledger, activeCurrency],
   );
   const topCategories = useMemo(
     () =>
@@ -717,18 +973,22 @@ export default function Home() {
 
   const startMode = (nextMode: Mode) => {
     const key = nextMode === "real" ? realStorageKey : demoStorageKey;
-    const stored = localStorage.getItem(key);
+    const legacyKey =
+      nextMode === "real" ? legacyRealStorageKey : legacyDemoStorageKey;
+    const stored =
+      localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
     let nextBook = nextMode === "real" ? createBlankBook() : createDemoBook();
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as BookState;
-        if (parsed.version === 4) nextBook = parsed;
+        nextBook = migrateBookState(JSON.parse(stored)) ?? nextBook;
       } catch {
         localStorage.removeItem(key);
       }
     }
     setMode(nextMode);
     setBook(nextBook);
+    setActiveCurrency(nextBook.profile.defaultCurrency);
+    setCommitmentCurrency(nextBook.profile.defaultCurrency);
     setSetupDraft(createSetupDraft(nextBook));
     setTab("home");
     setSettingsOpen(false);
@@ -736,46 +996,114 @@ export default function Home() {
 
   const returnToModeChoice = () => {
     localStorage.removeItem(lastModeStorageKey);
+    localStorage.removeItem(legacyLastModeStorageKey);
     setMode(null);
     setBook(null);
     setSettingsOpen(false);
   };
 
+  const updateSetupAccount = (
+    currency: CurrencyCode,
+    patch: Partial<CurrencyAccountDraft>,
+  ) => {
+    setSetupDraft((current) => ({
+      ...current,
+      accounts: {
+        ...current.accounts,
+        [currency]: { ...current.accounts[currency], ...patch },
+      },
+    }));
+  };
+
+  const selectCurrency = (currency: CurrencyCode) => {
+    setActiveCurrency(currency);
+    setCommitmentCurrency(currency);
+    setBook((current) =>
+      current
+        ? {
+            ...current,
+            profile: { ...current.profile, defaultCurrency: currency },
+          }
+        : current,
+    );
+  };
+
   const saveSetup = (startWithRecord = false) => {
     if (!book) return;
-    const openingFunds = Number(setupDraft.openingFunds);
-    const carriedBalance = Number(setupDraft.carriedBalance || 0);
-    const desiredRetention = Number(setupDraft.desiredRetention || 0);
-    const usableCarryover = Number(setupDraft.usableCarryover || 0);
+    const parsedAccounts = Object.fromEntries(
+      currencyCodes.map((currency) => {
+        const draft = setupDraft.accounts[currency];
+        return [
+          currency,
+          {
+            fundingLabel: draft.fundingLabel,
+            openingFunds: Number(draft.openingFunds || 0),
+            carriedBalance: Number(draft.carriedBalance || 0),
+            desiredRetention: Number(draft.desiredRetention || 0),
+            usableCarryover: Number(draft.usableCarryover || 0),
+          },
+        ];
+      }),
+    ) as Record<CurrencyCode, CurrencyAccount>;
     const fixedAmount = Number(setupDraft.fixedAmount || 0);
-    if (!Number.isFinite(openingFunds) || openingFunds <= 0) {
-      setSetupError("请填写本周期实际可用的生活费或工资。");
+    if (
+      currencyCodes.every(
+        (currency) => parsedAccounts[currency].openingFunds <= 0,
+      )
+    ) {
+      setSetupError("人民币或韩元至少填写一项本周期实际可用资金。");
       return;
     }
-    if (
-      !Number.isFinite(desiredRetention) ||
-      desiredRetention < 0 ||
-      !Number.isFinite(carriedBalance) ||
-      !Number.isFinite(usableCarryover) ||
-      usableCarryover < 0
-    ) {
-      setSetupError("请检查结转和月末留存金额。");
-      return;
+    for (const currency of currencyCodes) {
+      const account = parsedAccounts[currency];
+      if (
+        !isValidCurrencyAmount(account.openingFunds, currency) ||
+        account.openingFunds < 0 ||
+        !isValidCurrencyAmount(account.carriedBalance, currency) ||
+        !isValidCurrencyAmount(account.usableCarryover, currency) ||
+        !isValidCurrencyAmount(account.desiredRetention, currency)
+      ) {
+        setSetupError(
+          `${currencyMeta[currency].label}金额格式不正确；韩元只记录整数。`,
+        );
+        return;
+      }
     }
     if (setupDraft.cycleEndDate < setupDraft.cycleStartDate) {
       setSetupError("周期结束日期不能早于开始日期。");
       return;
     }
+    const hasFixedName = Boolean(setupDraft.fixedName.trim());
+    const hasFixedAmount = Boolean(setupDraft.fixedAmount.trim());
+    if (hasFixedName !== hasFixedAmount) {
+      setSetupError(
+        hasFixedName
+          ? "请填写这项固定支出的预计金额。"
+          : "请填写固定支出的款项名称，例如房租或话费。",
+      );
+      return;
+    }
+    if (
+      hasFixedAmount &&
+      (!isValidCurrencyAmount(fixedAmount, setupDraft.fixedCurrency) ||
+        fixedAmount <= 0)
+    ) {
+      setSetupError(
+        `${currencyMeta[setupDraft.fixedCurrency].label}固定支出金额格式不正确。`,
+      );
+      return;
+    }
     const nextCommitments =
-      !book.profile.onboarded && fixedAmount > 0
+      !book.profile.onboarded && hasFixedName && hasFixedAmount
         ? [
             ...book.fixedCommitments,
             {
               id: createId("fixed"),
-              name: setupDraft.fixedName.trim() || "本月固定支出",
+              name: setupDraft.fixedName.trim(),
               amount: fixedAmount,
-              category: "住房" as ExpenseCategory,
+              category: setupDraft.fixedCategory,
               paid: false,
+              currency: setupDraft.fixedCurrency,
             },
           ]
         : book.fixedCommitments;
@@ -784,14 +1112,22 @@ export default function Home() {
       profile: {
         name: setupDraft.name.trim() || "未命名大人",
         presentation: setupDraft.presentation,
-        fundingLabel: setupDraft.fundingLabel,
-        openingFunds,
-        carriedBalance,
-        usableCarryover: Math.min(
-          Math.max(0, carriedBalance),
-          usableCarryover,
-        ),
-        desiredRetention,
+        defaultCurrency: setupDraft.defaultCurrency,
+        accounts: Object.fromEntries(
+          currencyCodes.map((currency) => {
+            const account = parsedAccounts[currency];
+            return [
+              currency,
+              {
+                ...account,
+                usableCarryover: Math.min(
+                  Math.max(0, account.carriedBalance),
+                  account.usableCarryover,
+                ),
+              },
+            ];
+          }),
+        ) as Record<CurrencyCode, CurrencyAccount>,
         cycleStartDate: setupDraft.cycleStartDate,
         cycleEndDate: setupDraft.cycleEndDate,
         reminderEnabled: setupDraft.reminderEnabled,
@@ -801,6 +1137,8 @@ export default function Home() {
       fixedCommitments: nextCommitments,
     };
     setBook(nextBook);
+    setActiveCurrency(nextBook.profile.defaultCurrency);
+    setCommitmentCurrency(nextBook.profile.defaultCurrency);
     setSetupDraft(createSetupDraft(nextBook));
     setSetupError("");
     setCycleSettingsOpen(false);
@@ -838,9 +1176,13 @@ export default function Home() {
     setRecordOpen(false);
     setRecordStage("input");
     setRecordError("");
+    setRecordTargetDate(today);
   };
 
-  const openRecorder = (entry?: LedgerItem) => {
+  const openRecorder = (
+    entry?: LedgerItem,
+    targetDate: LocalDateKey = today,
+  ) => {
     resetScreenshotImport();
     setRecordError("");
     setVoiceStatus("");
@@ -854,14 +1196,18 @@ export default function Home() {
           note: entry.note,
           date: entry.date,
           expenseClass: entry.expenseClass,
+          currency: entry.currency,
         },
       ]);
+      setActiveCurrency(entry.currency);
+      setRecordTargetDate(entry.date);
       setRecordInput("");
       setRecordStage("confirm");
     } else {
       setPendingEntries([]);
       setRecordInput("");
       setRecordStage("input");
+      setRecordTargetDate(targetDate);
     }
     setRecordOpen(true);
   };
@@ -924,12 +1270,13 @@ export default function Home() {
       const fingerprint = await fingerprintScreenshotFile(screenshotFile);
       const result = await recognizeScreenshotLocally(
         screenshotFile,
-        today,
+        recordTargetDate,
         ({ progress, label }) => {
           setScreenshotProgress(progress);
           setScreenshotStatus(label);
         },
         controller.signal,
+        activeCurrency,
       );
       if (controller.signal.aborted) return;
       const drafts = result.candidates.map((candidate, index) => {
@@ -947,6 +1294,7 @@ export default function Home() {
           category: candidate.category,
           note: candidate.note,
           date: candidate.date,
+          currency: candidate.currency,
           expenseClass:
             candidate.direction === "支出" && candidate.category === "住房"
               ? ("fixed" as const)
@@ -1011,6 +1359,7 @@ export default function Home() {
         const issueCodes = next.issueCodes.filter((issue) => {
           if (issue === "note-needs-review" && next.note.trim()) return false;
           if (issue === "date-needs-review" && patch.date) return false;
+          if (issue === "currency-needs-review" && patch.currency) return false;
           return true;
         });
         return {
@@ -1047,8 +1396,9 @@ export default function Home() {
         amount: 0,
         category: "其他",
         note: "",
-        date: today,
+        date: recordTargetDate,
         expenseClass: "variable",
+        currency: activeCurrency,
       },
     ]);
     setRecordError("图片没有自动入账，请手动补全后确认。");
@@ -1067,6 +1417,7 @@ export default function Home() {
         (item) =>
           !Number.isFinite(item.amount) ||
           item.amount <= 0 ||
+          !isValidCurrencyAmount(item.amount, item.currency) ||
           !item.note.trim() ||
           !item.date ||
           (item.duplicateOfId && !item.duplicateOverride),
@@ -1090,7 +1441,8 @@ export default function Home() {
         category: entry.direction === "收入" ? "收入" : entry.category,
         note: entry.note.trim(),
         date: entry.date,
-        createdAt: now,
+          createdAt: now,
+          currency: entry.currency,
         expenseClass:
           entry.direction === "收入" ? "variable" : entry.expenseClass,
         source: "screenshot",
@@ -1100,9 +1452,22 @@ export default function Home() {
         sourcePlatform: screenshotPlatform,
       };
     });
-    const createdCheckDates = Array.from(
+    const importedDateKeys = Array.from(
       new Set(selected.map((item) => item.date)),
-    ).filter(
+    );
+    const importedDateSet = new Set(importedDateKeys);
+    const reconciledChecks = book.dailyChecks.map((check) =>
+      importedDateSet.has(check.dateKey)
+        ? {
+            ...check,
+            checkedAt:
+              check.checkedAt ??
+              (check.dateKey < today ? now : null),
+            noSpendConfirmed: false,
+          }
+        : check,
+    );
+    const createdCheckDates = importedDateKeys.filter(
       (dateKey) =>
         !book.dailyChecks.some((check) => check.dateKey === dateKey),
     );
@@ -1110,16 +1475,28 @@ export default function Home() {
       ...book,
       ledger: [...book.ledger, ...newItems],
       dailyChecks: [
-        ...book.dailyChecks,
+        ...reconciledChecks,
         ...createdCheckDates.map((dateKey) => ({
           dateKey,
-          checkedAt: null,
+          checkedAt: dateKey < today ? now : null,
           noSpendConfirmed: false,
         })),
       ],
     };
-    const before = getFinanceSnapshot(book);
-    const after = getFinanceSnapshot(nextBook);
+    const affectedCurrencies = Array.from(
+      new Set(newItems.map((item) => item.currency)),
+    );
+    const balanceChanges = Object.fromEntries(
+      affectedCurrencies.map((currency) => [
+        currency,
+        {
+          before: toYuan(getFinanceSnapshot(book, currency).ledgerBalanceCents),
+          after: toYuan(
+            getFinanceSnapshot(nextBook, currency).ledgerBalanceCents,
+          ),
+        },
+      ]),
+    ) as ScreenshotImportSummary["balanceChanges"];
     setBook(nextBook);
     setScreenshotSummary({
       batchId,
@@ -1127,8 +1504,7 @@ export default function Home() {
       skippedCount: screenshotDrafts.length - newItems.length,
       entryIds,
       createdCheckDates,
-      balanceBefore: toYuan(before.ledgerBalanceCents),
-      balanceAfter: toYuan(after.ledgerBalanceCents),
+      balanceChanges,
       undone: false,
     });
     setScreenshotRawText("");
@@ -1152,22 +1528,32 @@ export default function Home() {
         !screenshotSummary.createdCheckDates.includes(check.dateKey) ||
         nextLedger.some((item) => item.date === check.dateKey),
     );
-    setBook({ ...book, ledger: nextLedger, dailyChecks: nextChecks });
+    const nextBook = { ...book, ledger: nextLedger, dailyChecks: nextChecks };
+    setBook(nextBook);
     setScreenshotSummary({
       ...screenshotSummary,
       undone: true,
-      balanceAfter: toYuan(
-        getFinanceSnapshot({
-          ...book,
-          ledger: nextLedger,
-          dailyChecks: nextChecks,
-        }).ledgerBalanceCents,
+      balanceChanges: Object.fromEntries(
+        Object.entries(screenshotSummary.balanceChanges).map(
+          ([currency, change]) => [
+            currency,
+            {
+              before: change?.before ?? 0,
+              after: toYuan(
+                getFinanceSnapshot(
+                  nextBook,
+                  currency as CurrencyCode,
+                ).ledgerBalanceCents,
+              ),
+            },
+          ],
+        ),
       ),
     });
   };
 
   const recognizeEntries = () => {
-    const parsed = parseLedgerText(recordInput);
+    const parsed = parseLedgerText(recordInput, activeCurrency);
     if (parsed.length === 0) {
       setRecordError("还没有识别到金额。可以试试：午饭32元，地铁4元。");
       return;
@@ -1178,7 +1564,8 @@ export default function Home() {
         amount: item.amount,
         category: item.category,
         note: item.note,
-        date: today,
+        date: recordTargetDate,
+        currency: item.currency,
         expenseClass:
           item.direction === "支出" && item.category === "住房"
             ? "fixed"
@@ -1197,8 +1584,9 @@ export default function Home() {
         amount: 0,
         category: "其他",
         note: "",
-        date: today,
+        date: recordTargetDate,
         expenseClass: "variable",
+        currency: activeCurrency,
       },
     ]);
   };
@@ -1248,6 +1636,7 @@ export default function Home() {
       (item) =>
         Number.isFinite(item.amount) &&
         item.amount > 0 &&
+        isValidCurrencyAmount(item.amount, item.currency) &&
         item.note.trim() &&
         item.date,
     );
@@ -1269,6 +1658,7 @@ export default function Home() {
           book.ledger.find((item) => item.id === entry.id)?.createdAt ?? now,
         expenseClass:
           entry.direction === "收入" ? "variable" : entry.expenseClass,
+        currency: entry.currency,
       };
       if (entry.id) {
         nextLedger = nextLedger.map((item) =>
@@ -1281,12 +1671,23 @@ export default function Home() {
     const dates = new Set(validEntries.map((item) => item.date));
     const nextChecks = [...book.dailyChecks];
     dates.forEach((dateKey) => {
-      if (!nextChecks.some((check) => check.dateKey === dateKey)) {
+      const checkIndex = nextChecks.findIndex(
+        (check) => check.dateKey === dateKey,
+      );
+      if (checkIndex < 0) {
         nextChecks.push({
           dateKey,
-          checkedAt: null,
+          checkedAt: dateKey < today ? now : null,
           noSpendConfirmed: false,
         });
+      } else {
+        nextChecks[checkIndex] = {
+          ...nextChecks[checkIndex],
+          checkedAt:
+            nextChecks[checkIndex].checkedAt ??
+            (dateKey < today ? now : null),
+          noSpendConfirmed: false,
+        };
       }
     });
     const nextBook = {
@@ -1294,22 +1695,41 @@ export default function Home() {
       ledger: nextLedger,
       dailyChecks: nextChecks,
     };
-    const nextSnapshot = getFinanceSnapshot(nextBook);
-    const totalSigned = validEntries.reduce(
-      (sum, entry) =>
-        sum + (entry.direction === "收入" ? entry.amount : -entry.amount),
-      0,
+    const affectedCurrencies = Array.from(
+      new Set(validEntries.map((entry) => entry.currency)),
     );
+    const accountChanges = Object.fromEntries(
+      affectedCurrencies.map((currency) => {
+        const nextSnapshot = getFinanceSnapshot(nextBook, currency);
+        return [
+          currency,
+          {
+            balance: toYuan(nextSnapshot.ledgerBalanceCents),
+            safeToSpend: toYuan(nextSnapshot.rawSafeToSpendCents),
+          },
+        ];
+      }),
+    ) as FeedbackState["accounts"];
+    const changeParts = affectedCurrencies.map((currency) => {
+      const total = validEntries
+        .filter((entry) => entry.currency === currency)
+        .reduce(
+          (sum, entry) =>
+            sum + (entry.direction === "收入" ? entry.amount : -entry.amount),
+          0,
+        );
+      return `${currencyMeta[currency].label} ${formatMoney(total, currency, true)}`;
+    });
+    const nextActiveSnapshot = getFinanceSnapshot(nextBook, activeCurrency);
     setBook(nextBook);
     setFeedback({
       title:
         validEntries.length === 1
           ? `已记下：${validEntries[0].note}`
           : `已确认 ${validEntries.length} 笔账`,
-      fact: `本次账面变化 ${formatMoney(totalSigned, true)}，所有金额已按你的确认重新计算。`,
-      balance: toYuan(nextSnapshot.ledgerBalanceCents),
-      safeToSpend: toYuan(nextSnapshot.rawSafeToSpendCents),
-      fiscalState: nextSnapshot.fiscalState,
+      fact: `本次分别记入：${changeParts.join("；")}。不同币种不会相加。`,
+      accounts: accountChanges,
+      fiscalState: nextActiveSnapshot.fiscalState,
     });
     setRecordOpen(false);
     setRecordStage("input");
@@ -1319,36 +1739,57 @@ export default function Home() {
 
   const deleteLedger = (item: LedgerItem) => {
     if (!book || !window.confirm(`删除“${item.note}”这笔账吗？`)) return;
+    const nextLedger = book.ledger.filter((entry) => entry.id !== item.id);
     setBook({
       ...book,
-      ledger: book.ledger.filter((entry) => entry.id !== item.id),
+      ledger: nextLedger,
+      dailyChecks: book.dailyChecks.map((check) =>
+        check.dateKey === item.date &&
+        !check.noSpendConfirmed &&
+        !nextLedger.some((entry) => entry.date === item.date)
+          ? { ...check, checkedAt: null }
+          : check,
+      ),
     });
   };
 
-  const markTodayChecked = (noSpendConfirmed: boolean) => {
+  const markDateChecked = (
+    dateKey: LocalDateKey,
+    noSpendConfirmed: boolean,
+  ) => {
     if (!book) return;
-    if (!noSpendConfirmed && todayLedger.length === 0) {
-      openRecorder();
+    const dateLedger = book.ledger.filter((item) => item.date === dateKey);
+    if (!noSpendConfirmed && dateLedger.length === 0) {
+      openRecorder(undefined, dateKey);
       return;
     }
     const next: DailyCheck = {
-      dateKey: today,
+      dateKey,
       checkedAt: new Date().toISOString(),
-      noSpendConfirmed,
+      noSpendConfirmed: noSpendConfirmed && dateLedger.length === 0,
     };
     setBook({
       ...book,
       dailyChecks: [
-        ...book.dailyChecks.filter((item) => item.dateKey !== today),
+        ...book.dailyChecks.filter((item) => item.dateKey !== dateKey),
         next,
       ],
     });
   };
+  const markTodayChecked = (noSpendConfirmed: boolean) =>
+    markDateChecked(today, noSpendConfirmed);
 
   const addCommitment = () => {
     if (!book) return;
     const amount = Number(commitmentAmount);
-    if (!commitmentName.trim() || !Number.isFinite(amount) || amount <= 0) {
+    if (
+      !commitmentName.trim() ||
+      !isValidCurrencyAmount(amount, commitmentCurrency) ||
+      amount <= 0
+    ) {
+      setCommitmentError(
+        `请填写款项名称和正确的${currencyMeta[commitmentCurrency].label}金额。`,
+      );
       return;
     }
     setBook({
@@ -1361,11 +1802,13 @@ export default function Home() {
           amount,
           category: commitmentCategory,
           paid: false,
+          currency: commitmentCurrency,
         },
       ],
     });
     setCommitmentName("");
     setCommitmentAmount("");
+    setCommitmentError("");
   };
 
   const payCommitment = (commitment: FixedCommitment) => {
@@ -1381,6 +1824,7 @@ export default function Home() {
         date: today,
         createdAt: new Date().toISOString(),
         expenseClass: "fixed",
+        currency: commitment.currency,
       },
     ];
     const nextBook = {
@@ -1390,19 +1834,27 @@ export default function Home() {
         item.id === commitment.id ? { ...item, paid: true } : item,
       ),
       dailyChecks: book.dailyChecks.some((item) => item.dateKey === today)
-        ? book.dailyChecks
+        ? book.dailyChecks.map((item) =>
+            item.dateKey === today
+              ? { ...item, noSpendConfirmed: false }
+              : item,
+          )
         : [
             ...book.dailyChecks,
             { dateKey: today, checkedAt: null, noSpendConfirmed: false },
           ],
     };
-    const nextSnapshot = getFinanceSnapshot(nextBook);
+    const nextSnapshot = getFinanceSnapshot(nextBook, commitment.currency);
     setBook(nextBook);
     setFeedback({
       title: `已支付：${commitment.name}`,
       fact: "待付项目已转为真实支出，账面余额和安全可花同步更新。",
-      balance: toYuan(nextSnapshot.ledgerBalanceCents),
-      safeToSpend: toYuan(nextSnapshot.rawSafeToSpendCents),
+      accounts: {
+        [commitment.currency]: {
+          balance: toYuan(nextSnapshot.ledgerBalanceCents),
+          safeToSpend: toYuan(nextSnapshot.rawSafeToSpendCents),
+        },
+      },
       fiscalState: nextSnapshot.fiscalState,
     });
   };
@@ -1427,7 +1879,10 @@ export default function Home() {
         topCategories.length
           ? `本周期金额最高的是${topCategories
               .slice(0, 3)
-              .map((item) => `${item.category}${formatMoney(item.amount)}`)
+              .map(
+                (item) =>
+                  `${item.category}${formatMoney(item.amount, activeCurrency)}`,
+              )
               .join("、")}。`
           : "本周期还没有支出记录。",
       );
@@ -1437,6 +1892,7 @@ export default function Home() {
       setLedgerAnswer(
         `按已记录账目、月末留存和未付固定支出估算，现在安全可花 ${formatMoney(
           toYuan(snapshot.rawSafeToSpendCents),
+          activeCurrency,
         )}。`,
       );
       return;
@@ -1444,7 +1900,11 @@ export default function Home() {
     setLedgerAnswer(
       `本周期已记录支出 ${formatMoney(
         toYuan(snapshot.transactions.netExpenseCents),
-      )}，账面余额 ${formatMoney(toYuan(snapshot.ledgerBalanceCents))}。`,
+        activeCurrency,
+      )}，账面余额 ${formatMoney(
+        toYuan(snapshot.ledgerBalanceCents),
+        activeCurrency,
+      )}。`,
     );
   };
 
@@ -1453,20 +1913,27 @@ export default function Home() {
     if (snapshot.rawSafeToSpendCents < 0) {
       return {
         category: top?.category ?? ("其他" as ExpenseCategory),
-        title: `安全可花已少于 0 元`,
+        title: `${currencyMeta[activeCurrency].label}安全可花已低于 0`,
         detail: `在保留月末目标和未付固定支出后，当前缺口为 ${formatMoney(
           toYuan(snapshot.safetyShortfallCents),
+          activeCurrency,
         )}。`,
       };
     }
     if (top) {
       const count = activeBook.ledger.filter(
-        (item) => item.direction === "支出" && item.category === top.category,
+        (item) =>
+          item.direction === "支出" &&
+          item.currency === activeCurrency &&
+          item.category === top.category,
       ).length;
       return {
         category: top.category,
         title: `本周先看${top.category}`,
-        detail: `${count} 笔共 ${formatMoney(top.amount)}，是当前金额最高的支出方向。`,
+        detail: `${count} 笔共 ${formatMoney(
+          top.amount,
+          activeCurrency,
+        )}，是当前${currencyMeta[activeCurrency].label}金额最高的支出方向。`,
       };
     }
     return {
@@ -1484,8 +1951,11 @@ export default function Home() {
   ) => {
     if (!book) return;
     const weekKey = getCycleWeekKey();
-    const nextReferences = { ...book.categoryReferences };
-    if (category && amount) nextReferences[category] = amount;
+    const nextReferences = {
+      ...book.categoryReferences,
+      [activeCurrency]: { ...book.categoryReferences[activeCurrency] },
+    };
+    if (category && amount) nextReferences[activeCurrency][category] = amount;
     setBook({
       ...book,
       profile:
@@ -1493,7 +1963,10 @@ export default function Home() {
           ? { ...book.profile, reminderEnabled: true }
           : book.profile,
       weeklyReviews: [
-        ...book.weeklyReviews.filter((item) => item.weekKey !== weekKey),
+        ...book.weeklyReviews.filter(
+          (item) =>
+            item.weekKey !== weekKey || item.currency !== activeCurrency,
+        ),
         {
           weekKey,
           completedAt: new Date().toISOString(),
@@ -1501,6 +1974,7 @@ export default function Home() {
           actionLabel,
           category,
           amount,
+          currency: activeCurrency,
         },
       ],
       categoryReferences: nextReferences,
@@ -1513,7 +1987,10 @@ export default function Home() {
       return;
     }
     const key = mode === "real" ? realStorageKey : demoStorageKey;
+    const legacyKey =
+      mode === "real" ? legacyRealStorageKey : legacyDemoStorageKey;
     localStorage.removeItem(key);
+    localStorage.removeItem(legacyKey);
     const nextBook = mode === "real" ? createBlankBook() : createDemoBook();
     setBook(nextBook);
     setSetupDraft(createSetupDraft(nextBook));
@@ -1605,96 +2082,127 @@ export default function Home() {
               </select>
             </label>
             <label>
-              <span>本周期资金来源</span>
+              <span>默认记账币种</span>
               <select
-                value={setupDraft.fundingLabel}
+                value={setupDraft.defaultCurrency}
                 onChange={(event) =>
                   setSetupDraft({
                     ...setupDraft,
-                    fundingLabel: event.target.value as Profile["fundingLabel"],
+                    defaultCurrency: event.target.value as CurrencyCode,
                   })
                 }
               >
-                <option value="生活费">生活费</option>
-                <option value="工资">工资</option>
-                <option value="本月可用资金">本月可用资金</option>
+                {currencyCodes.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currencyMeta[currency].label}
+                  </option>
+                ))}
               </select>
+              <small>每一笔都可再切换币种；人民币与韩元不会相加。</small>
             </label>
-            <label>
-              <span>{setupDraft.fundingLabel}金额</span>
-              <div className="money-input">
-                <b>¥</b>
-                <input
-                  type="number"
-                  min="0"
-                  inputMode="decimal"
-                  value={setupDraft.openingFunds}
-                  placeholder="3000"
-                  onChange={(event) =>
-                    setSetupDraft({
-                      ...setupDraft,
-                      openingFunds: event.target.value,
-                    })
-                  }
-                />
-              </div>
-            </label>
-            <label>
-              <span>上期结转</span>
-              <div className="money-input">
-                <b>¥</b>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={setupDraft.carriedBalance}
-                  onChange={(event) =>
-                    setSetupDraft({
-                      ...setupDraft,
-                      carriedBalance: event.target.value,
-                    })
-                  }
-                />
-              </div>
-              <small>可以是负数；不会由系统自动补齐。</small>
-            </label>
-            <label>
-              <span>结转中允许本月动用</span>
-              <div className="money-input">
-                <b>¥</b>
-                <input
-                  type="number"
-                  min="0"
-                  inputMode="decimal"
-                  value={setupDraft.usableCarryover}
-                  onChange={(event) =>
-                    setSetupDraft({
-                      ...setupDraft,
-                      usableCarryover: event.target.value,
-                    })
-                  }
-                />
-              </div>
-              <small>不填写即默认保护正数结转。</small>
-            </label>
-            <label>
-              <span>月末希望留下</span>
-              <div className="money-input">
-                <b>¥</b>
-                <input
-                  type="number"
-                  min="0"
-                  inputMode="decimal"
-                  value={setupDraft.desiredRetention}
-                  onChange={(event) =>
-                    setSetupDraft({
-                      ...setupDraft,
-                      desiredRetention: event.target.value,
-                    })
-                  }
-                />
-              </div>
-              <small>这是目标，不是一笔“存款”交易；可以填 0。</small>
-            </label>
+            <div className="setup-account-grid">
+              {currencyCodes.map((currency) => {
+                const account = setupDraft.accounts[currency];
+                const meta = currencyMeta[currency];
+                return (
+                  <fieldset className="setup-account-card" key={currency}>
+                    <legend>{meta.label}账户</legend>
+                    <label>
+                      <span>本周期资金来源</span>
+                      <select
+                        value={account.fundingLabel}
+                        onChange={(event) =>
+                          updateSetupAccount(currency, {
+                            fundingLabel: event.target
+                              .value as CurrencyAccount["fundingLabel"],
+                          })
+                        }
+                      >
+                        <option value="生活费">生活费</option>
+                        <option value="工资">工资</option>
+                        <option value="本月可用资金">本月可用资金</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>{account.fundingLabel}金额</span>
+                      <div className="money-input">
+                        <b>{meta.symbol}</b>
+                        <input
+                          type="number"
+                          min="0"
+                          step={meta.inputStep}
+                          inputMode="decimal"
+                          value={account.openingFunds}
+                          placeholder={currency === "CNY" ? "3000" : "500000"}
+                          onChange={(event) =>
+                            updateSetupAccount(currency, {
+                              openingFunds: event.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                    </label>
+                    <details>
+                      <summary>结转与月末留存（可选）</summary>
+                      <label>
+                        <span>上期结转</span>
+                        <div className="money-input">
+                          <b>{meta.symbol}</b>
+                          <input
+                            type="number"
+                            step={meta.inputStep}
+                            inputMode="decimal"
+                            value={account.carriedBalance}
+                            onChange={(event) =>
+                              updateSetupAccount(currency, {
+                                carriedBalance: event.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                        <small>可以是负数；系统不会自动补齐。</small>
+                      </label>
+                      <label>
+                        <span>结转中允许本月动用</span>
+                        <div className="money-input">
+                          <b>{meta.symbol}</b>
+                          <input
+                            type="number"
+                            min="0"
+                            step={meta.inputStep}
+                            inputMode="decimal"
+                            value={account.usableCarryover}
+                            onChange={(event) =>
+                              updateSetupAccount(currency, {
+                                usableCarryover: event.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      </label>
+                      <label>
+                        <span>月末希望留下</span>
+                        <div className="money-input">
+                          <b>{meta.symbol}</b>
+                          <input
+                            type="number"
+                            min="0"
+                            step={meta.inputStep}
+                            inputMode="decimal"
+                            value={account.desiredRetention}
+                            onChange={(event) =>
+                              updateSetupAccount(currency, {
+                                desiredRetention: event.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                      </label>
+                    </details>
+                  </fieldset>
+                );
+              })}
+            </div>
             <label>
               <span>本月待付固定支出（可选）</span>
               <input
@@ -1707,14 +2215,52 @@ export default function Home() {
                   })
                 }
               />
+              <small>填写具体款项，例如房租、电话费、健身房月费。</small>
+            </label>
+            <label>
+              <span>固定支出分类</span>
+              <select
+                value={setupDraft.fixedCategory}
+                onChange={(event) =>
+                  setSetupDraft({
+                    ...setupDraft,
+                    fixedCategory: event.target.value as ExpenseCategory,
+                  })
+                }
+              >
+                {expenseCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>固定支出币种</span>
+              <select
+                value={setupDraft.fixedCurrency}
+                onChange={(event) =>
+                  setSetupDraft({
+                    ...setupDraft,
+                    fixedCurrency: event.target.value as CurrencyCode,
+                  })
+                }
+              >
+                {currencyCodes.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currencyMeta[currency].label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               <span>固定支出金额（可选）</span>
               <div className="money-input">
-                <b>¥</b>
+                <b>{currencyMeta[setupDraft.fixedCurrency].symbol}</b>
                 <input
                   type="number"
                   min="0"
+                  step={currencyMeta[setupDraft.fixedCurrency].inputStep}
                   inputMode="decimal"
                   value={setupDraft.fixedAmount}
                   placeholder="800"
@@ -1726,6 +2272,9 @@ export default function Home() {
                   }
                 />
               </div>
+              <small>
+                尚未支付；会从对应币种的安全可花中预留，实际支付后不会重复扣减。
+              </small>
             </label>
             <label>
               <span>周期开始</span>
@@ -1810,7 +2359,8 @@ export default function Home() {
     50,
     Math.round((categoryTotals[reviewIssue.category] || 100) * 0.85 / 10) * 10,
   );
-  const latestReview = [...book.weeklyReviews]
+  const latestReview = book.weeklyReviews
+    .filter((review) => review.currency === activeCurrency)
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
   const npcMood =
     fiscalState === "stable"
@@ -1896,6 +2446,52 @@ export default function Home() {
       </header>
 
       <div className="page-content">
+        <section className="currency-toolbar" aria-label="币种账本">
+          <div>
+            <span className="eyebrow">双币种独立记录</span>
+            <strong>当前查看：{currencyMeta[activeCurrency].label}</strong>
+          </div>
+          <div className="currency-switcher">
+            {currencyCodes.map((currency) => (
+              <button
+                key={currency}
+                type="button"
+                aria-pressed={activeCurrency === currency}
+                onClick={() => selectCurrency(currency)}
+              >
+                {currencyMeta[currency].label}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="dual-currency-summary" aria-label="双币种支出概览">
+          {currencyCodes.map((currency) => {
+            const currencySnapshot = snapshots[currency];
+            return (
+              <article
+                key={currency}
+                className={`currency-summary-card ${
+                  activeCurrency === currency ? "active" : ""
+                }`}
+              >
+                <span>{currencyMeta[currency].label}开销</span>
+                <strong>
+                  {formatMoney(
+                    toYuan(currencySnapshot.transactions.netExpenseCents),
+                    currency,
+                  )}
+                </strong>
+                <small>
+                  账面{" "}
+                  {formatMoney(
+                    toYuan(currencySnapshot.ledgerBalanceCents),
+                    currency,
+                  )}
+                </small>
+              </article>
+            );
+          })}
+        </section>
         {tab === "home" && (
           <div className="page-stack">
             <section className="rank-hero">
@@ -1938,25 +2534,25 @@ export default function Home() {
             <section className="finance-overview">
               <div>
                 <span>本期到账</span>
-                <strong>{formatMoney(toYuan(snapshot.openingBalanceCents + snapshot.transactions.additionalIncomeCents))}</strong>
-                <small>{book.profile.fundingLabel}与结转</small>
+                <strong>{formatMoney(toYuan(snapshot.openingBalanceCents + snapshot.transactions.additionalIncomeCents), activeCurrency)}</strong>
+                <small>{book.profile.accounts[activeCurrency].fundingLabel}与结转</small>
               </div>
               <div>
                 <span>已记支出</span>
-                <strong>{formatMoney(toYuan(snapshot.transactions.netExpenseCents))}</strong>
-                <small>{book.ledger.filter((item) => item.direction === "支出").length} 笔</small>
+                <strong>{formatMoney(toYuan(snapshot.transactions.netExpenseCents), activeCurrency)}</strong>
+                <small>{book.ledger.filter((item) => item.direction === "支出" && item.currency === activeCurrency).length} 笔</small>
               </div>
               <div>
                 <span>{rankConfig.treasuryName}账面</span>
                 <strong className={snapshot.ledgerBalanceCents < 0 ? "negative" : ""}>
-                  {formatMoney(toYuan(snapshot.ledgerBalanceCents))}
+                  {formatMoney(toYuan(snapshot.ledgerBalanceCents), activeCurrency)}
                 </strong>
                 <small>按已记录账目估算</small>
               </div>
               <div className="safe-spend-card">
                 <span>现在安全可花</span>
                 <strong className={snapshot.rawSafeToSpendCents < 0 ? "negative" : ""}>
-                  {formatMoney(toYuan(snapshot.rawSafeToSpendCents))}
+                  {formatMoney(toYuan(snapshot.rawSafeToSpendCents), activeCurrency)}
                 </strong>
                 <small>已扣除留存目标与待付项目</small>
               </div>
@@ -1967,6 +2563,7 @@ export default function Home() {
               room="hall"
               fiscalState={fiscalState}
               balance={toYuan(snapshot.ledgerBalanceCents)}
+              currency={activeCurrency}
             />
 
             <section className={`daily-check ${todayChecked ? "complete" : ""}`}>
@@ -1990,13 +2587,15 @@ export default function Home() {
                   >
                     {todayLedger.length ? "已经记齐" : "补记今天"}
                   </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => markTodayChecked(true)}
-                  >
-                    今天无支出
-                  </button>
+                  {todayLedger.length === 0 && (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => markTodayChecked(true)}
+                    >
+                      今天无支出
+                    </button>
+                  )}
                 </div>
               )}
             </section>
@@ -2011,9 +2610,10 @@ export default function Home() {
                   查看全部
                 </button>
               </div>
-              {book.ledger.length ? (
+              {book.ledger.some((item) => item.currency === activeCurrency) ? (
                 <div className="compact-ledger">
                   {[...book.ledger]
+                    .filter((item) => item.currency === activeCurrency)
                     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                     .slice(0, 4)
                     .map((item) => (
@@ -2030,7 +2630,13 @@ export default function Home() {
                           <small>{item.date.slice(5)} · {item.category}</small>
                         </span>
                         <b className={item.direction === "支出" ? "expense" : "income"}>
-                          {formatMoney(item.direction === "支出" ? -item.amount : item.amount, true)}
+                          {formatMoney(
+                            item.direction === "支出"
+                              ? -item.amount
+                              : item.amount,
+                            item.currency,
+                            true,
+                          )}
                         </b>
                       </button>
                     ))}
@@ -2057,6 +2663,7 @@ export default function Home() {
               room="treasury"
               fiscalState={fiscalState}
               balance={toYuan(snapshot.ledgerBalanceCents)}
+              currency={activeCurrency}
             />
             <section className="section-card formula-card">
               <div className="section-heading">
@@ -2069,22 +2676,22 @@ export default function Home() {
                 <div>
                   <span>账面余额</span>
                   <p>
-                    本期到账 {formatMoney(toYuan(snapshot.openingBalanceCents + snapshot.transactions.additionalIncomeCents))}
+                    本期到账 {formatMoney(toYuan(snapshot.openingBalanceCents + snapshot.transactions.additionalIncomeCents), activeCurrency)}
                     <i>−</i>
-                    已记支出 {formatMoney(toYuan(snapshot.transactions.netExpenseCents))}
+                    已记支出 {formatMoney(toYuan(snapshot.transactions.netExpenseCents), activeCurrency)}
                   </p>
-                  <strong>{formatMoney(toYuan(snapshot.ledgerBalanceCents))}</strong>
+                  <strong>{formatMoney(toYuan(snapshot.ledgerBalanceCents), activeCurrency)}</strong>
                 </div>
                 <div className="safe">
                   <span>安全可花</span>
                   <p>
                     账面余额
                     <i>−</i>
-                    留存目标 {formatMoney(toYuan(snapshot.targetClosingBalanceCents))}
+                    留存目标 {formatMoney(toYuan(snapshot.targetClosingBalanceCents), activeCurrency)}
                     <i>−</i>
-                    待付 {formatMoney(toYuan(snapshot.unpaidFixedExpenseCents))}
+                    待付 {formatMoney(toYuan(snapshot.unpaidFixedExpenseCents), activeCurrency)}
                   </p>
-                  <strong>{formatMoney(toYuan(snapshot.rawSafeToSpendCents))}</strong>
+                  <strong>{formatMoney(toYuan(snapshot.rawSafeToSpendCents), activeCurrency)}</strong>
                 </div>
               </div>
             </section>
@@ -2106,11 +2713,25 @@ export default function Home() {
                   value={commitmentAmount}
                   type="number"
                   min="0"
+                  step={currencyMeta[commitmentCurrency].inputStep}
                   inputMode="decimal"
                   placeholder="金额"
                   aria-label="待付项目金额"
                   onChange={(event) => setCommitmentAmount(event.target.value)}
                 />
+                <select
+                  value={commitmentCurrency}
+                  aria-label="待付项目币种"
+                  onChange={(event) =>
+                    setCommitmentCurrency(event.target.value as CurrencyCode)
+                  }
+                >
+                  {currencyCodes.map((currency) => (
+                    <option key={currency} value={currency}>
+                      {currencyMeta[currency].label}
+                    </option>
+                  ))}
+                </select>
                 <select
                   value={commitmentCategory}
                   aria-label="待付项目分类"
@@ -2128,15 +2749,23 @@ export default function Home() {
                   加入待付
                 </button>
               </div>
-              {book.fixedCommitments.length ? (
+              <small className="field-hint">
+                例如房租、电话费；尚未支付时只预留对应币种的安全可花。
+              </small>
+              {commitmentError && <p className="form-error">{commitmentError}</p>}
+              {book.fixedCommitments.some(
+                (item) => item.currency === activeCurrency,
+              ) ? (
                 <div className="commitment-list">
-                  {book.fixedCommitments.map((item) => (
+                  {book.fixedCommitments
+                    .filter((item) => item.currency === activeCurrency)
+                    .map((item) => (
                     <div key={item.id} className={item.paid ? "paid" : ""}>
                       <span>
                         <strong>{item.name}</strong>
                         <small>{item.paid ? "已转为支出" : "尚未支付，只影响安全可花"}</small>
                       </span>
-                      <b>{formatMoney(item.amount)}</b>
+                      <b>{formatMoney(item.amount, item.currency)}</b>
                       {!item.paid && (
                         <button type="button" onClick={() => payCommitment(item)}>
                           标记已付
@@ -2163,18 +2792,19 @@ export default function Home() {
                 <div className="category-bars">
                   {topCategories.map((item) => {
                     const max = topCategories[0]?.amount || 1;
-                    const reference = book.categoryReferences[item.category];
+                    const reference =
+                      book.categoryReferences[activeCurrency][item.category];
                     return (
                       <div key={item.category}>
                         <span>
                           <strong>{item.category} · {categoryCourtNames[item.category]}</strong>
-                          <b>{formatMoney(item.amount)}</b>
+                          <b>{formatMoney(item.amount, activeCurrency)}</b>
                         </span>
                         <i>
                           <em style={{ width: `${Math.max(5, (item.amount / max) * 100)}%` }} />
                         </i>
                         {reference && (
-                          <small>下周参考额度 {formatMoney(reference)}</small>
+                          <small>下周参考额度 {formatMoney(reference, activeCurrency)}</small>
                         )}
                       </div>
                     );
@@ -2216,9 +2846,10 @@ export default function Home() {
                   + 记账
                 </button>
               </div>
-              {book.ledger.length ? (
+              {book.ledger.some((item) => item.currency === activeCurrency) ? (
                 <div className="full-ledger">
                   {[...book.ledger]
+                    .filter((item) => item.currency === activeCurrency)
                     .sort((a, b) =>
                       `${b.date}${b.createdAt}`.localeCompare(`${a.date}${a.createdAt}`),
                     )
@@ -2232,7 +2863,13 @@ export default function Home() {
                           <small>{item.date} · {item.category}</small>
                         </div>
                         <b className={item.direction === "支出" ? "expense" : "income"}>
-                          {formatMoney(item.direction === "支出" ? -item.amount : item.amount, true)}
+                          {formatMoney(
+                            item.direction === "支出"
+                              ? -item.amount
+                              : item.amount,
+                            item.currency,
+                            true,
+                          )}
                         </b>
                         <div className="row-actions">
                           <button type="button" onClick={() => openRecorder(item)}>
@@ -2267,6 +2904,7 @@ export default function Home() {
               room="council"
               fiscalState={fiscalState}
               balance={toYuan(snapshot.ledgerBalanceCents)}
+              currency={activeCurrency}
             />
             <section className="section-card council-entry">
               <div className="council-mark">
@@ -2321,11 +2959,23 @@ export default function Home() {
                         item.checkedAt &&
                         (item.confirmedEntryCount > 0 || item.noSpendConfirmed),
                     );
+                    if (valid) {
+                      return (
+                        <div key={dateKey} className="valid">
+                          <span>{dateKey.slice(5)}</span>
+                          <strong>已核对</strong>
+                        </div>
+                      );
+                    }
                     return (
-                      <div key={dateKey} className={valid ? "valid" : ""}>
+                      <button
+                        key={dateKey}
+                        type="button"
+                        onClick={() => openRecorder(undefined, dateKey)}
+                      >
                         <span>{dateKey.slice(5)}</span>
-                        <strong>{valid ? "已核对" : dateKey === today ? "今天" : "可补记"}</strong>
-                      </div>
+                        <strong>{dateKey === today ? "今天" : "可补记"}</strong>
+                      </button>
                     );
                   },
                 )}
@@ -2336,7 +2986,9 @@ export default function Home() {
                 </button>
               )}
             </section>
-            {book.weeklyReviews.length > 0 && (
+            {book.weeklyReviews.some(
+              (review) => review.currency === activeCurrency,
+            ) && (
               <section className="section-card">
                 <div className="section-heading">
                   <div>
@@ -2344,10 +2996,11 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="review-history">
-                  {[...book.weeklyReviews]
+                  {book.weeklyReviews
+                    .filter((review) => review.currency === activeCurrency)
                     .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
                     .map((review) => (
-                      <div key={review.weekKey}>
+                      <div key={`${review.weekKey}-${review.currency}`}>
                         <span>{review.weekKey.replace("week:", "周起始 ")}</span>
                         <strong>{review.actionLabel}</strong>
                       </div>
@@ -2368,6 +3021,7 @@ export default function Home() {
               room="works"
               fiscalState={fiscalState}
               balance={toYuan(snapshot.ledgerBalanceCents)}
+              currency={activeCurrency}
             />
             <section className="section-card build-progress-card">
               <div className="build-seal">建</div>
@@ -2456,7 +3110,9 @@ export default function Home() {
                     ? "编辑这笔账"
                     : recordStage.startsWith("screenshot")
                       ? "导入账单截图"
-                      : "记一笔账"}
+                      : recordTargetDate === today
+                        ? "记一笔账"
+                        : `补记 ${recordTargetDate.slice(5)}`}
                 </h2>
               </div>
               <button className="close-button" type="button" aria-label="关闭" onClick={closeRecorder}>
@@ -2476,6 +3132,24 @@ export default function Home() {
             />
             {recordStage === "input" ? (
               <>
+                <div className="record-context">
+                  <span>入账日期：{recordTargetDate}</span>
+                  <label>
+                    默认币种
+                    <select
+                      value={activeCurrency}
+                      onChange={(event) =>
+                        selectCurrency(event.target.value as CurrencyCode)
+                      }
+                    >
+                      {currencyCodes.map((currency) => (
+                        <option key={currency} value={currency}>
+                          {currencyMeta[currency].label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
                 <label className="record-textarea">
                   <span>可以一次说完一天的账</span>
                   <textarea
@@ -2513,6 +3187,21 @@ export default function Home() {
                 <button className="primary-button full" type="button" onClick={recognizeEntries}>
                   识别为账目
                 </button>
+                {recordTargetDate !== today &&
+                  !book.ledger.some(
+                    (item) => item.date === recordTargetDate,
+                  ) && (
+                  <button
+                    className="secondary-button full"
+                    type="button"
+                    onClick={() => {
+                      markDateChecked(recordTargetDate, true);
+                      closeRecorder();
+                    }}
+                  >
+                    确认 {recordTargetDate.slice(5)} 无支出
+                  </button>
+                )}
                 <div className="screenshot-entry">
                   <div>
                     <strong>有微信或支付宝账单截图？</strong>
@@ -2574,10 +3263,36 @@ export default function Home() {
                           </select>
                         </label>
                         <label>
+                          <span>币种</span>
+                          <select
+                            value={entry.currency}
+                            onChange={(event) =>
+                              setPendingEntries((items) =>
+                                items.map((item, itemIndex) =>
+                                  itemIndex === index
+                                    ? {
+                                        ...item,
+                                        currency: event.target
+                                          .value as CurrencyCode,
+                                      }
+                                    : item,
+                                ),
+                              )
+                            }
+                          >
+                            {currencyCodes.map((currency) => (
+                              <option key={currency} value={currency}>
+                                {currencyMeta[currency].label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
                           <span>金额</span>
                           <input
                             type="number"
                             min="0"
+                            step={currencyMeta[entry.currency].inputStep}
                             inputMode="decimal"
                             value={entry.amount || ""}
                             onChange={(event) =>
@@ -2877,6 +3592,9 @@ export default function Home() {
                                 {entry.issueCodes.includes("date-needs-review") && (
                                   <span>日期取今天，请核对</span>
                                 )}
+                                {entry.issueCodes.includes(
+                                  "currency-needs-review",
+                                ) && <span>币种按当前选择推测，请核对</span>}
                                 {entry.issueCodes.includes("transfer-needs-review") && (
                                   <span>转账方向请核对</span>
                                 )}
@@ -2926,10 +3644,29 @@ export default function Home() {
                                 </select>
                               </label>
                               <label>
+                                <span>币种</span>
+                                <select
+                                  value={entry.currency}
+                                  onChange={(event) =>
+                                    updateScreenshotDraft(index, {
+                                      currency: event.target
+                                        .value as CurrencyCode,
+                                    })
+                                  }
+                                >
+                                  {currencyCodes.map((currency) => (
+                                    <option key={currency} value={currency}>
+                                      {currencyMeta[currency].label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
                                 <span>金额</span>
                                 <input
                                   type="number"
                                   min="0"
+                                  step={currencyMeta[entry.currency].inputStep}
                                   inputMode="decimal"
                                   value={entry.amount || ""}
                                   onChange={(event) =>
@@ -3081,16 +3818,30 @@ export default function Home() {
                         ? "只撤销了本次截图导入，其他手动账目没有变化。"
                         : `跳过 ${screenshotSummary.skippedCount} 笔未选或疑似重复账目。`}
                     </p>
-                    <div className="import-balance-change">
-                      <div>
-                        <span>导入前账面</span>
-                        <strong>{formatMoney(screenshotSummary.balanceBefore)}</strong>
-                      </div>
-                      <b>→</b>
-                      <div>
-                        <span>{screenshotSummary.undone ? "撤销后账面" : "导入后账面"}</span>
-                        <strong>{formatMoney(screenshotSummary.balanceAfter)}</strong>
-                      </div>
+                    <div className="import-balance-list">
+                      {Object.entries(screenshotSummary.balanceChanges).map(
+                        ([currency, change]) => {
+                          if (!change) return null;
+                          const code = currency as CurrencyCode;
+                          return (
+                            <div className="import-balance-change" key={code}>
+                              <div>
+                                <span>{currencyMeta[code].label}导入前</span>
+                                <strong>{formatMoney(change.before, code)}</strong>
+                              </div>
+                              <b>→</b>
+                              <div>
+                                <span>
+                                  {screenshotSummary.undone
+                                    ? "撤销后"
+                                    : "导入后"}
+                                </span>
+                                <strong>{formatMoney(change.after, code)}</strong>
+                              </div>
+                            </div>
+                          );
+                        },
+                      )}
                     </div>
                     <div className="modal-actions stacked-mobile">
                       {!screenshotSummary.undone && (
@@ -3141,16 +3892,21 @@ export default function Home() {
             </div>
             <p className="feedback-fact">{feedback.fact}</p>
             <div className="feedback-numbers">
-              <div>
-                <span>账面余额</span>
-                <strong>{formatMoney(feedback.balance)}</strong>
-              </div>
-              <div>
-                <span>安全可花</span>
-                <strong className={feedback.safeToSpend < 0 ? "negative" : ""}>
-                  {formatMoney(feedback.safeToSpend)}
-                </strong>
-              </div>
+              {Object.entries(feedback.accounts).map(([currency, account]) => {
+                if (!account) return null;
+                const code = currency as CurrencyCode;
+                return (
+                  <div key={code}>
+                    <span>{currencyMeta[code].label}账面 / 安全可花</span>
+                    <strong>
+                      {formatMoney(account.balance, code)} /{" "}
+                      <i className={account.safeToSpend < 0 ? "negative" : ""}>
+                        {formatMoney(account.safeToSpend, code)}
+                      </i>
+                    </strong>
+                  </div>
+                );
+              })}
             </div>
             <div className={`feedback-cast ${feedback.fiscalState}`}>
               {(feedback.fiscalState === "stable"
@@ -3260,14 +4016,14 @@ export default function Home() {
                     onClick={() =>
                       saveReviewAction(
                         "category-reference",
-                        `下周${reviewIssue.category}参考额度设为 ${formatMoney(reviewReference)}`,
+                        `下周${reviewIssue.category}参考额度设为 ${formatMoney(reviewReference, activeCurrency)}`,
                         reviewIssue.category,
                         reviewReference,
                       )
                     }
                   >
                     <span>收紧一个方向</span>
-                    <strong>下周{reviewIssue.category}参考 {formatMoney(reviewReference)}</strong>
+                    <strong>下周{reviewIssue.category}参考 {formatMoney(reviewReference, activeCurrency)}</strong>
                     <small>保存后会出现在账房分类中，不改变本周账目。</small>
                   </button>
                   <button
@@ -3352,49 +4108,72 @@ export default function Home() {
               </button>
             </div>
             <div className="form-grid">
-              <label>
-                <span>本周期可用资金</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={setupDraft.openingFunds}
-                  onChange={(event) =>
-                    setSetupDraft({ ...setupDraft, openingFunds: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                <span>上期结转</span>
-                <input
-                  type="number"
-                  value={setupDraft.carriedBalance}
-                  onChange={(event) =>
-                    setSetupDraft({ ...setupDraft, carriedBalance: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                <span>结转中允许动用</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={setupDraft.usableCarryover}
-                  onChange={(event) =>
-                    setSetupDraft({ ...setupDraft, usableCarryover: event.target.value })
-                  }
-                />
-              </label>
-              <label>
-                <span>月末希望留下</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={setupDraft.desiredRetention}
-                  onChange={(event) =>
-                    setSetupDraft({ ...setupDraft, desiredRetention: event.target.value })
-                  }
-                />
-              </label>
+              <div className="setup-account-grid">
+                {currencyCodes.map((currency) => {
+                  const account = setupDraft.accounts[currency];
+                  const meta = currencyMeta[currency];
+                  return (
+                    <fieldset className="setup-account-card" key={currency}>
+                      <legend>{meta.label}</legend>
+                      <label>
+                        <span>本周期可用资金</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step={meta.inputStep}
+                          value={account.openingFunds}
+                          onChange={(event) =>
+                            updateSetupAccount(currency, {
+                              openingFunds: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>上期结转</span>
+                        <input
+                          type="number"
+                          step={meta.inputStep}
+                          value={account.carriedBalance}
+                          onChange={(event) =>
+                            updateSetupAccount(currency, {
+                              carriedBalance: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>结转中允许动用</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step={meta.inputStep}
+                          value={account.usableCarryover}
+                          onChange={(event) =>
+                            updateSetupAccount(currency, {
+                              usableCarryover: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>月末希望留下</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step={meta.inputStep}
+                          value={account.desiredRetention}
+                          onChange={(event) =>
+                            updateSetupAccount(currency, {
+                              desiredRetention: event.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </fieldset>
+                  );
+                })}
+              </div>
               <label>
                 <span>周期开始</span>
                 <input
