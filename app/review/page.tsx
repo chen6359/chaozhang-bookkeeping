@@ -33,7 +33,7 @@ const councilSteps = [
     line: "大人，本周期账册已经封好，共记了 6 笔。今日是否升堂核账？",
     facts: ["7月22日—7月28日", "每周朝会", "本周期尚未召开"],
     action: "升堂核账",
-    backdrop: "/previews/background/B-council.png",
+    backdrop: "/previews/background/B-council.jpg",
     actors: [
       ["/characters/npc/comic/county/neutral.webp", "钱粮小吏"],
       ["/characters/player/female/county/stable.webp", "县令"],
@@ -46,7 +46,7 @@ const councilSteps = [
     line: "本周期共记录支出 ¥2,128，消费池 ¥2,000，当前差额 −¥128；县库账面为 ¥95。",
     facts: ["收入 ¥4,005", "支出 ¥2,128", "预算使用率 106%"],
     action: "查看异常",
-    backdrop: "/previews/background/B-council.png",
+    backdrop: "/previews/background/B-council.jpg",
     actors: [
       ["/characters/npc/advisor/county/neutral.webp", "师爷"],
       ["/characters/npc/comic/county/neutral.webp", "钱粮小吏"],
@@ -91,7 +91,7 @@ const councilSteps = [
     line: "超支主要集中在三笔：同学聚餐 ¥420、夜宵 ¥238、外卖 ¥122，共计 ¥780。",
     facts: ["占餐饮支出 76%", "可查看详情", "可编辑或删除"],
     action: "生成调整草案",
-    backdrop: "/previews/background/B-treasury.png",
+    backdrop: "/previews/background/B-treasury.jpg",
     actors: [
       ["/characters/npc/advisor/county/neutral.webp", "师爷"],
       ["/characters/npc/comic/county/neutral.webp", "钱粮小吏"],
@@ -104,7 +104,7 @@ const councilSteps = [
     line: "本期餐饮额度 ¥900、实际 ¥1,028；下周期参考额度先拟为 ¥950，可继续修改。",
     facts: ["只保存下周期草案", "不改本期余额", "可修改、可删除"],
     action: "保存草案",
-    backdrop: "/previews/background/B-council.png",
+    backdrop: "/previews/background/B-council.jpg",
     actors: [
       ["/characters/npc/advisor/county/neutral.webp", "师爷"],
       ["/characters/npc/companion-female/county/neutral.webp", "随行知己"],
@@ -117,7 +117,7 @@ const councilSteps = [
     line: "本周期记录 6 笔，完成朝会 1 次，本次获得政绩 65。",
     facts: ["累计政绩 125", "下一阶 知府", "还差 35"],
     action: "生成散会备忘",
-    backdrop: "/previews/background/B-council.png",
+    backdrop: "/previews/background/B-council.jpg",
     actors: [
       ["/characters/npc/advisor/county/success.webp", "师爷"],
       ["/characters/player/female/county/stable.webp", "县令"],
@@ -176,7 +176,7 @@ export default function ReviewPage() {
               <article className={styles.portraitCard} key={key}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={`/previews/background/${group.id}-${key}.png`}
+                  src={`/previews/background/${group.id}-${key}.jpg`}
                   alt={`${group.title}的${label}页面背景预览`}
                 />
                 <div className={styles.cardLabel}>
