@@ -252,7 +252,9 @@ def save_asset(image: Image.Image, path: Path) -> None:
 
 def extract_players() -> None:
     for gender in ("male", "female"):
-        sheet = Image.open(PUBLIC / f"ranks-{gender}.jpg").convert("RGB")
+        sheet = Image.open(
+            ROOT / "design-assets" / "characters" / "source-sheets" / f"ranks-{gender}.jpg"
+        ).convert("RGB")
         width, height = sheet.size
         for index, rank in enumerate(RANKS):
             left = round(index * width / 5)
@@ -272,7 +274,9 @@ def extract_npcs() -> None:
         "companion-male": "npc-companion-male-ranks.jpg",
     }
     for route, filename in routes.items():
-        sheet = Image.open(PUBLIC / filename).convert("RGB")
+        sheet = Image.open(
+            ROOT / "design-assets" / "characters" / "source-sheets" / filename
+        ).convert("RGB")
         width, height = sheet.size
         for row, mood in enumerate(MOODS):
             top = round(row * height / 3)

@@ -31,6 +31,10 @@ import {
 
 const pageSource = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 const styleSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const screenshotOcrSource = await readFile(
+  new URL("../lib/screenshot-ocr-client.ts", import.meta.url),
+  "utf8",
+);
 
 test("companion routes use one user-facing identity without changing asset families", () => {
   assert.equal(npcCharacterFamilies["companion-female"].identity, "随行知己");
@@ -204,6 +208,12 @@ test("screenshot duplicate detection uses import key or reviewed ledger fields",
     ),
     false,
   );
+});
+
+test("screenshot OCR keeps its worker, core and language model on the site", () => {
+  assert.match(screenshotOcrSource, /workerPath:\s*"\/ocr\/worker\.min\.js"/);
+  assert.match(screenshotOcrSource, /corePath:\s*"\/ocr\/core"/);
+  assert.match(screenshotOcrSource, /langPath:\s*"\/ocr\/lang"/);
 });
 
 test("KRW screenshot candidates keep currency in review and duplicate identity", () => {

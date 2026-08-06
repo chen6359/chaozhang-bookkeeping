@@ -98,6 +98,8 @@ export async function recognizeScreenshotLocally(
     const { createWorker, OEM, PSM } = await import("tesseract.js");
     worker = await createWorker(["chi_sim", "eng"], OEM.LSTM_ONLY, {
       workerPath: "/ocr/worker.min.js",
+      corePath: "/ocr/core",
+      langPath: "/ocr/lang",
       cacheMethod: "write",
       workerBlobURL: false,
       logger: (message) => {
