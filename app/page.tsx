@@ -39,6 +39,16 @@ import {
   type CurrencyCode,
 } from "../lib/currency";
 import {
+  queryLedger,
+  type LedgerQueryResult,
+} from "../lib/ledger-query";
+import {
+  analyzeWeeklyReview,
+  createWeeklyReviewAction,
+  evaluateWeeklyReviewAction,
+  type WeeklyReviewAction,
+} from "../lib/weekly-review";
+import {
   createScreenshotRowKey,
   isLikelyLedgerDuplicate,
   type ScreenshotIssueCode,
@@ -108,6 +118,7 @@ type WeeklyReview = {
   category?: ExpenseCategory;
   amount?: number;
   currency: CurrencyCode;
+  action?: WeeklyReviewAction;
 };
 
 type CurrencyAccount = {
@@ -163,6 +174,9 @@ type RecordStage =
   | "screenshot-review"
   | "screenshot-success"
   | "screenshot-error";
+
+type ReviewStage = "issue" | "options" | "confirm" | "saved";
+type ReviewChoice = "category-reference" | "observe";
 
 type ScreenshotDraft = PendingEntry & {
   tempId: string;
@@ -762,6 +776,8 @@ export default function Home() {
   const [tab, setTab] = useState<TabKey>("home");
   const [activeCurrency, setActiveCurrency] =
     useState<CurrencyCode>("CNY");
+  const [recordCurrency, setRecordCurrency] =
+    useState<CurrencyCode>("CNY");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupDraft, setSetupDraft] = useState<SetupDraft>(() =>
     createSetupDraft(createBlankBook()),
@@ -793,8 +809,12 @@ export default function Home() {
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [rankArchiveOpen, setRankArchiveOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewStage, setReviewStage] = useState<ReviewStage>("issue");
+  const [reviewChoice, setReviewChoice] =
+    useState<ReviewChoice | null>(null);
   const [ledgerQuestion, setLedgerQuestion] = useState("");
-  const [ledgerAnswer, setLedgerAnswer] = useState("");
+  const [ledgerAnswer, setLedgerAnswer] =
+    useState<LedgerQueryResult | null>(null);
   const [commitmentName, setCommitmentName] = useState("");
   const [commitmentAmount, setCommitmentAmount] = useState("");
   const [commitmentCategory, setCommitmentCategory] =
@@ -835,6 +855,7 @@ export default function Home() {
         setMode(nextMode);
         setBook(nextBook);
         setActiveCurrency(nextBook.profile.defaultCurrency);
+        setRecordCurrency(nextBook.profile.defaultCurrency);
         setCommitmentCurrency(nextBook.profile.defaultCurrency);
         setSetupDraft(createSetupDraft(nextBook));
       }
@@ -988,6 +1009,7 @@ export default function Home() {
     setMode(nextMode);
     setBook(nextBook);
     setActiveCurrency(nextBook.profile.defaultCurrency);
+    setRecordCurrency(nextBook.profile.defaultCurrency);
     setCommitmentCurrency(nextBook.profile.defaultCurrency);
     setSetupDraft(createSetupDraft(nextBook));
     setTab("home");
@@ -1018,14 +1040,7 @@ export default function Home() {
   const selectCurrency = (currency: CurrencyCode) => {
     setActiveCurrency(currency);
     setCommitmentCurrency(currency);
-    setBook((current) =>
-      current
-        ? {
-            ...current,
-            profile: { ...current.profile, defaultCurrency: currency },
-          }
-        : current,
-    );
+    setLedgerAnswer(null);
   };
 
   const saveSetup = (startWithRecord = false) => {
@@ -1138,6 +1153,7 @@ export default function Home() {
     };
     setBook(nextBook);
     setActiveCurrency(nextBook.profile.defaultCurrency);
+    setRecordCurrency(nextBook.profile.defaultCurrency);
     setCommitmentCurrency(nextBook.profile.defaultCurrency);
     setSetupDraft(createSetupDraft(nextBook));
     setSetupError("");
@@ -1199,11 +1215,12 @@ export default function Home() {
           currency: entry.currency,
         },
       ]);
-      setActiveCurrency(entry.currency);
+      setRecordCurrency(entry.currency);
       setRecordTargetDate(entry.date);
       setRecordInput("");
       setRecordStage("confirm");
     } else {
+      setRecordCurrency(activeBook.profile.defaultCurrency);
       setPendingEntries([]);
       setRecordInput("");
       setRecordStage("input");
@@ -1276,7 +1293,7 @@ export default function Home() {
           setScreenshotStatus(label);
         },
         controller.signal,
-        activeCurrency,
+        recordCurrency,
       );
       if (controller.signal.aborted) return;
       const drafts = result.candidates.map((candidate, index) => {
@@ -1398,7 +1415,7 @@ export default function Home() {
         note: "",
         date: recordTargetDate,
         expenseClass: "variable",
-        currency: activeCurrency,
+        currency: recordCurrency,
       },
     ]);
     setRecordError("图片没有自动入账，请手动补全后确认。");
@@ -1553,7 +1570,7 @@ export default function Home() {
   };
 
   const recognizeEntries = () => {
-    const parsed = parseLedgerText(recordInput, activeCurrency);
+    const parsed = parseLedgerText(recordInput, recordCurrency);
     if (parsed.length === 0) {
       setRecordError("还没有识别到金额。可以试试：午饭32元，地铁4元。");
       return;
@@ -1586,7 +1603,7 @@ export default function Home() {
         note: "",
         date: recordTargetDate,
         expenseClass: "variable",
-        currency: activeCurrency,
+        currency: recordCurrency,
       },
     ]);
   };
@@ -1720,16 +1737,20 @@ export default function Home() {
         );
       return `${currencyMeta[currency].label} ${formatMoney(total, currency, true)}`;
     });
-    const nextActiveSnapshot = getFinanceSnapshot(nextBook, activeCurrency);
+    const feedbackCurrency = affectedCurrencies[0] ?? activeCurrency;
+    const nextFeedbackSnapshot = getFinanceSnapshot(
+      nextBook,
+      feedbackCurrency,
+    );
     setBook(nextBook);
     setFeedback({
       title:
         validEntries.length === 1
           ? `已记下：${validEntries[0].note}`
           : `已确认 ${validEntries.length} 笔账`,
-      fact: `本次分别记入：${changeParts.join("；")}。不同币种不会相加。`,
+      fact: `本次记入：${changeParts.join("；")}。`,
       accounts: accountChanges,
-      fiscalState: nextActiveSnapshot.fiscalState,
+      fiscalState: nextFeedbackSnapshot.fiscalState,
     });
     setRecordOpen(false);
     setRecordStage("input");
@@ -1871,97 +1892,62 @@ export default function Home() {
     });
   };
 
-  const askLedger = () => {
-    const question = ledgerQuestion.trim();
+  const runLedgerQuery = (rawQuestion: string) => {
+    const question = rawQuestion.trim();
     if (!question) return;
-    if (/花哪|最多|主要/.test(question)) {
-      setLedgerAnswer(
-        topCategories.length
-          ? `本周期金额最高的是${topCategories
-              .slice(0, 3)
-              .map(
-                (item) =>
-                  `${item.category}${formatMoney(item.amount, activeCurrency)}`,
-              )
-              .join("、")}。`
-          : "本周期还没有支出记录。",
-      );
-      return;
-    }
-    if (/还能花|可花|剩多少/.test(question)) {
-      setLedgerAnswer(
-        `按已记录账目、月末留存和未付固定支出估算，现在安全可花 ${formatMoney(
-          toYuan(snapshot.rawSafeToSpendCents),
-          activeCurrency,
-        )}。`,
-      );
-      return;
-    }
     setLedgerAnswer(
-      `本周期已记录支出 ${formatMoney(
-        toYuan(snapshot.transactions.netExpenseCents),
-        activeCurrency,
-      )}，账面余额 ${formatMoney(
-        toYuan(snapshot.ledgerBalanceCents),
-        activeCurrency,
-      )}。`,
+      queryLedger({
+        question,
+        ledger: activeBook.ledger,
+        currency: activeCurrency,
+        today,
+        cycleStartDate: activeBook.profile.cycleStartDate,
+        cycleEndDate: activeBook.profile.cycleEndDate,
+        safeToSpend: toYuan(snapshot.rawSafeToSpendCents),
+      }),
     );
   };
 
-  const getReviewIssue = () => {
-    const top = topCategories[0];
-    if (snapshot.rawSafeToSpendCents < 0) {
-      return {
-        category: top?.category ?? ("其他" as ExpenseCategory),
-        title: `${currencyMeta[activeCurrency].label}安全可花已低于 0`,
-        detail: `在保留月末目标和未付固定支出后，当前缺口为 ${formatMoney(
-          toYuan(snapshot.safetyShortfallCents),
-          activeCurrency,
-        )}。`,
-      };
-    }
-    if (top) {
-      const count = activeBook.ledger.filter(
-        (item) =>
-          item.direction === "支出" &&
-          item.currency === activeCurrency &&
-          item.category === top.category,
-      ).length;
-      return {
-        category: top.category,
-        title: `本周先看${top.category}`,
-        detail: `${count} 笔共 ${formatMoney(
-          top.amount,
-          activeCurrency,
-        )}，是当前${currencyMeta[activeCurrency].label}金额最高的支出方向。`,
-      };
-    }
-    return {
-      category: "其他" as ExpenseCategory,
-      title: "本周账目还不够形成判断",
-      detail: "先补齐本周账目，下次复盘再给出调整。",
-    };
-  };
+  const askLedger = () => runLedgerQuery(ledgerQuestion);
 
   const saveReviewAction = (
-    actionId: string,
-    actionLabel: string,
+    choice: ReviewChoice,
     category?: ExpenseCategory,
     amount?: number,
   ) => {
     if (!book) return;
     const weekKey = getCycleWeekKey();
+    const action =
+      choice === "category-reference" && category && amount
+        ? createWeeklyReviewAction({
+            kind: "category-reference",
+            decidedWeek: weekKey,
+            currency: activeCurrency,
+            category,
+            targetAmount: amount,
+          })
+        : createWeeklyReviewAction({
+            kind: "observe",
+            decidedWeek: weekKey,
+            currency: activeCurrency,
+          });
+    const actionLabel =
+      action.kind === "category-reference"
+        ? `下周${action.target.category}参考额为 ${formatMoney(
+            action.target.amount,
+            activeCurrency,
+          )}`
+        : "下周继续记录，暂不调整参考额";
     const nextReferences = {
       ...book.categoryReferences,
       [activeCurrency]: { ...book.categoryReferences[activeCurrency] },
     };
-    if (category && amount) nextReferences[activeCurrency][category] = amount;
+    if (action.kind === "category-reference") {
+      nextReferences[activeCurrency][action.target.category] =
+        action.target.amount;
+    }
     setBook({
       ...book,
-      profile:
-        actionId === "daily-reminder"
-          ? { ...book.profile, reminderEnabled: true }
-          : book.profile,
       weeklyReviews: [
         ...book.weeklyReviews.filter(
           (item) =>
@@ -1970,16 +1956,23 @@ export default function Home() {
         {
           weekKey,
           completedAt: new Date().toISOString(),
-          selectedActionId: actionId,
+          selectedActionId: choice,
           actionLabel,
-          category,
-          amount,
+          category:
+            action.kind === "category-reference"
+              ? action.target.category
+              : undefined,
+          amount:
+            action.kind === "category-reference"
+              ? action.target.amount
+              : undefined,
           currency: activeCurrency,
+          action,
         },
       ],
       categoryReferences: nextReferences,
     });
-    setReviewOpen(false);
+    setReviewStage("saved");
   };
 
   const resetCurrentMode = () => {
@@ -2098,7 +2091,7 @@ export default function Home() {
                   </option>
                 ))}
               </select>
-              <small>每一笔都可再切换币种；人民币与韩元不会相加。</small>
+              <small>每笔账都能选择人民币或韩元，账面按币种分别显示。</small>
             </label>
             <div className="setup-account-grid">
               {currencyCodes.map((currency) => {
@@ -2354,14 +2347,66 @@ export default function Home() {
     );
   }
 
-  const reviewIssue = getReviewIssue();
-  const reviewReference = Math.max(
-    50,
-    Math.round((categoryTotals[reviewIssue.category] || 100) * 0.85 / 10) * 10,
-  );
+  const currentWeekKey = getCycleWeekKey();
+  const reviewAnalysis = analyzeWeeklyReview({
+    weekKey: currentWeekKey,
+    currency: activeCurrency,
+    validCheckInDays: reviewAvailability.validCheckInDays,
+    entries: activeBook.ledger,
+    categoryReferences: activeBook.categoryReferences[activeCurrency],
+    minimumValidDays: mode === "demo" ? 1 : 4,
+  });
+  const reviewIssue =
+    reviewAnalysis.status === "issue"
+      ? {
+          category: reviewAnalysis.issue.category,
+          title: `本周先看${reviewAnalysis.issue.category}`,
+          detail: `${reviewAnalysis.issue.entryCount} 笔可调整支出共 ${formatMoney(
+            reviewAnalysis.issue.actual,
+            activeCurrency,
+          )}。${reviewAnalysis.issue.message}`,
+          actual: reviewAnalysis.issue.actual,
+        }
+      : {
+          category: "其他" as ExpenseCategory,
+          title: "本周先把账记完整",
+          detail: reviewAnalysis.message,
+          actual: 0,
+        };
+  const reviewReference =
+    reviewAnalysis.status === "issue"
+      ? Math.max(
+          activeCurrency === "KRW" ? 1000 : 10,
+          Math.round(
+            reviewAnalysis.issue.actual * 0.85 /
+              (activeCurrency === "KRW" ? 1000 : 10),
+          ) * (activeCurrency === "KRW" ? 1000 : 10),
+        )
+      : 0;
   const latestReview = book.weeklyReviews
     .filter((review) => review.currency === activeCurrency)
     .sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+  const dueReview = book.weeklyReviews.find(
+    (review) =>
+      review.currency === activeCurrency &&
+      review.action?.effectiveWeek === currentWeekKey,
+  );
+  const dueReviewEvaluation = dueReview?.action
+    ? evaluateWeeklyReviewAction({
+        action: dueReview.action,
+        weekKey: currentWeekKey,
+        validCheckInDays: reviewAvailability.validCheckInDays,
+        entries: activeBook.ledger,
+        minimumValidDays: mode === "demo" ? 1 : 4,
+      })
+    : null;
+  const openWeeklyReview = () => {
+    setReviewChoice(null);
+    setReviewStage(
+      latestReview?.weekKey === currentWeekKey ? "saved" : "issue",
+    );
+    setReviewOpen(true);
+  };
   const npcMood =
     fiscalState === "stable"
       ? "success"
@@ -2446,52 +2491,6 @@ export default function Home() {
       </header>
 
       <div className="page-content">
-        <section className="currency-toolbar" aria-label="币种账本">
-          <div>
-            <span className="eyebrow">双币种独立记录</span>
-            <strong>当前查看：{currencyMeta[activeCurrency].label}</strong>
-          </div>
-          <div className="currency-switcher">
-            {currencyCodes.map((currency) => (
-              <button
-                key={currency}
-                type="button"
-                aria-pressed={activeCurrency === currency}
-                onClick={() => selectCurrency(currency)}
-              >
-                {currencyMeta[currency].label}
-              </button>
-            ))}
-          </div>
-        </section>
-        <section className="dual-currency-summary" aria-label="双币种支出概览">
-          {currencyCodes.map((currency) => {
-            const currencySnapshot = snapshots[currency];
-            return (
-              <article
-                key={currency}
-                className={`currency-summary-card ${
-                  activeCurrency === currency ? "active" : ""
-                }`}
-              >
-                <span>{currencyMeta[currency].label}开销</span>
-                <strong>
-                  {formatMoney(
-                    toYuan(currencySnapshot.transactions.netExpenseCents),
-                    currency,
-                  )}
-                </strong>
-                <small>
-                  账面{" "}
-                  {formatMoney(
-                    toYuan(currencySnapshot.ledgerBalanceCents),
-                    currency,
-                  )}
-                </small>
-              </article>
-            );
-          })}
-        </section>
         {tab === "home" && (
           <div className="page-stack">
             <section className="rank-hero">
@@ -2528,6 +2527,31 @@ export default function Home() {
                     <small>仕途已至最高阶</small>
                   )}
                 </div>
+              </div>
+            </section>
+
+            <section className="account-context" aria-label="切换查看的账本">
+              <span>当前账本</span>
+              <div>
+                {currencyCodes.map((currency) => (
+                  <button
+                    key={currency}
+                    type="button"
+                    aria-pressed={activeCurrency === currency}
+                    onClick={() => selectCurrency(currency)}
+                  >
+                    <strong>{currencyMeta[currency].label}</strong>
+                    <small>
+                      已用{" "}
+                      {formatMoney(
+                        toYuan(
+                          snapshots[currency].transactions.netExpenseCents,
+                        ),
+                        currency,
+                      )}
+                    </small>
+                  </button>
+                ))}
               </div>
             </section>
 
@@ -2658,6 +2682,28 @@ export default function Home() {
             <div className="page-title">
               <h1>{rankConfig.treasuryName}账房</h1>
             </div>
+            <section className="account-context compact" aria-label="切换查看的账本">
+              <span>查看账本</span>
+              <div>
+                {currencyCodes.map((currency) => (
+                  <button
+                    key={currency}
+                    type="button"
+                    aria-pressed={activeCurrency === currency}
+                    onClick={() => selectCurrency(currency)}
+                  >
+                    <strong>{currencyMeta[currency].label}</strong>
+                    <small>
+                      账面{" "}
+                      {formatMoney(
+                        toYuan(snapshots[currency].ledgerBalanceCents),
+                        currency,
+                      )}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </section>
             <WorldScene
               rank={rank}
               room="treasury"
@@ -2668,8 +2714,7 @@ export default function Home() {
             <section className="section-card formula-card">
               <div className="section-heading">
                 <div>
-                  <span className="eyebrow">本周期资金</span>
-                  <h2>两种余额，不混在一起</h2>
+                  <h2>{currencyMeta[activeCurrency].label}账面怎么算</h2>
                 </div>
               </div>
               <div className="formula-lines">
@@ -2819,12 +2864,33 @@ export default function Home() {
               <div className="section-heading">
                 <div>
                   <h2>问账房</h2>
+                  <p>从已确认的{currencyMeta[activeCurrency].label}账目中查找，不会修改账本。</p>
                 </div>
+              </div>
+              <div className="ledger-query-prompts" aria-label="常用问题">
+                {[
+                  "我这周的钱花哪了",
+                  "本月金额最大的三笔",
+                  "今天总支出",
+                  "我还能花多少",
+                ].map((question) => (
+                  <button
+                    key={question}
+                    type="button"
+                    onClick={() => {
+                      setLedgerQuestion(question);
+                      runLedgerQuery(question);
+                    }}
+                  >
+                    {question}
+                  </button>
+                ))}
               </div>
               <div className="ask-ledger">
                 <input
                   value={ledgerQuestion}
                   placeholder="例如：我这周的钱花哪了？"
+                  aria-label="向账房提问"
                   onChange={(event) => setLedgerQuestion(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") askLedger();
@@ -2834,7 +2900,61 @@ export default function Home() {
                   查询
                 </button>
               </div>
-              {ledgerAnswer && <div className="ledger-answer">{ledgerAnswer}</div>}
+              {ledgerAnswer && (
+                <article
+                  className={`ledger-query-result ${
+                    ledgerAnswer.unsupported ? "unsupported" : ""
+                  }`}
+                >
+                  <header>
+                    <span>
+                      {ledgerAnswer.scope.label} ·{" "}
+                      {currencyMeta[ledgerAnswer.currency].label}
+                    </span>
+                    <h3>{ledgerAnswer.title}</h3>
+                    <p>{ledgerAnswer.summary}</p>
+                  </header>
+                  {ledgerAnswer.evidence.length > 0 && (
+                    <div className="ledger-query-evidence">
+                      {ledgerAnswer.evidence.map((item, index) => (
+                        <div key={`${item.kind}-${item.label}-${index}`}>
+                          <span>
+                            {item.label}
+                            {item.kind === "transaction" && (
+                              <small>
+                                {item.date} · {item.category}
+                              </small>
+                            )}
+                            {item.kind === "category" && (
+                              <small>{item.count} 笔</small>
+                            )}
+                          </span>
+                          <strong>
+                            {formatMoney(
+                              item.amount,
+                              ledgerAnswer.currency,
+                            )}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="ledger-query-actions">
+                    {ledgerAnswer.actions.map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        onClick={() => {
+                          setLedgerQuestion(action.query);
+                          runLedgerQuery(action.query);
+                        }}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              )}
             </section>
 
             <section className="section-card">
@@ -2899,21 +3019,16 @@ export default function Home() {
             <div className="page-title">
               <h1>每日核对与周议事</h1>
             </div>
-            <WorldScene
-              rank={rank}
-              room="council"
-              fiscalState={fiscalState}
-              balance={toYuan(snapshot.ledgerBalanceCents)}
-              currency={activeCurrency}
-            />
             <section className="section-card council-entry">
               <div className="council-mark">
                 <strong>{continuity.rollingValidDays}</strong>
                 <span>近28天有效核对日</span>
               </div>
               <div>
-                <span className="eyebrow">本周复盘</span>
-                {latestReview?.weekKey === getCycleWeekKey() ? (
+                <span className="eyebrow">
+                  {currencyMeta[activeCurrency].label} · 本周复盘
+                </span>
+                {latestReview?.weekKey === currentWeekKey ? (
                   <>
                     <h2>本周决定已经保存</h2>
                     <p>{latestReview.actionLabel}</p>
@@ -2921,7 +3036,7 @@ export default function Home() {
                 ) : reviewAvailability.canOpen ? (
                   <>
                     <h2>账册已齐，可以开始议事</h2>
-                    <p>系统会提出一个重点，你来选择下周真正生效的调整。</p>
+                    <p>先看清一项可调整支出，再决定下周是否设置参考额。</p>
                   </>
                 ) : (
                   <>
@@ -2930,12 +3045,12 @@ export default function Home() {
                   </>
                 )}
               </div>
-              {latestReview?.weekKey === getCycleWeekKey() ? (
-                <button className="secondary-button" type="button" onClick={() => setReviewOpen(true)}>
+              {latestReview?.weekKey === currentWeekKey ? (
+                <button className="secondary-button" type="button" onClick={openWeeklyReview}>
                   查看本周决定
                 </button>
               ) : reviewAvailability.canOpen ? (
-                <button className="primary-button" type="button" onClick={() => setReviewOpen(true)}>
+                <button className="primary-button" type="button" onClick={openWeeklyReview}>
                   开始本周议事
                 </button>
               ) : (
@@ -2944,6 +3059,58 @@ export default function Home() {
                 </button>
               )}
             </section>
+            {dueReviewEvaluation &&
+              dueReviewEvaluation.outcome !== "not-due" &&
+              dueReviewEvaluation.outcome !== "cancelled" && (
+                <section className="section-card review-outcome-card">
+                  <span className="eyebrow">上次决定 · 本周结果</span>
+                  {dueReviewEvaluation.outcome === "achieved" ? (
+                    <>
+                      <h2>参考额内完成</h2>
+                      <p>
+                        {dueReviewEvaluation.category}实际{" "}
+                        {formatMoney(
+                          dueReviewEvaluation.actual,
+                          activeCurrency,
+                        )}
+                        ，比参考额少{" "}
+                        {formatMoney(
+                          dueReviewEvaluation.remaining,
+                          activeCurrency,
+                        )}
+                        。
+                      </p>
+                    </>
+                  ) : dueReviewEvaluation.outcome === "exceeded" ? (
+                    <>
+                      <h2>超过上周设定的参考额</h2>
+                      <p>
+                        {dueReviewEvaluation.category}实际{" "}
+                        {formatMoney(
+                          dueReviewEvaluation.actual,
+                          activeCurrency,
+                        )}
+                        ，超出{" "}
+                        {formatMoney(
+                          dueReviewEvaluation.exceededBy,
+                          activeCurrency,
+                        )}
+                        。
+                      </p>
+                    </>
+                  ) : dueReviewEvaluation.outcome === "observed" ? (
+                    <>
+                      <h2>观察周已完成</h2>
+                      <p>本周账目可用于下一次议事，不虚构调整结果。</p>
+                    </>
+                  ) : (
+                    <>
+                      <h2>本周数据还不足</h2>
+                      <p>{dueReviewEvaluation.message}</p>
+                    </>
+                  )}
+                </section>
+              )}
             <section className="section-card">
               <div className="section-heading">
                 <div>
@@ -3135,11 +3302,13 @@ export default function Home() {
                 <div className="record-context">
                   <span>入账日期：{recordTargetDate}</span>
                   <label>
-                    默认币种
+                    本次默认币种
                     <select
-                      value={activeCurrency}
+                      value={recordCurrency}
                       onChange={(event) =>
-                        selectCurrency(event.target.value as CurrencyCode)
+                        setRecordCurrency(
+                          event.target.value as CurrencyCode,
+                        )
                       }
                     >
                       {currencyCodes.map((currency) => (
@@ -3966,31 +4135,58 @@ export default function Home() {
               <div className="scene-shade" />
               <div className="modal-heading">
                 <div>
-                  <h2>{latestReview?.weekKey === getCycleWeekKey() ? "本周议事备忘" : reviewIssue.title}</h2>
+                  <span className="eyebrow">
+                    {reviewStage === "issue"
+                      ? "案由"
+                      : reviewStage === "options"
+                        ? "选策"
+                        : reviewStage === "confirm"
+                          ? "影响预览"
+                          : "议定"}
+                  </span>
+                  <h2>
+                    {reviewStage === "saved"
+                      ? "本周议事备忘"
+                      : reviewIssue.title}
+                  </h2>
                 </div>
                 <button className="close-button dark" type="button" aria-label="关闭" onClick={() => setReviewOpen(false)}>
                   ×
                 </button>
               </div>
             </div>
-            {latestReview?.weekKey === getCycleWeekKey() ? (
+            {reviewStage === "saved" &&
+            latestReview?.weekKey === currentWeekKey ? (
               <div className="saved-review">
                 <span className="review-seal">定</span>
                 <p>本周已经决定：</p>
                 <strong>{latestReview.actionLabel}</strong>
+                {latestReview.action && (
+                  <small>
+                    将在{" "}
+                    {latestReview.action.effectiveWeek.replace(
+                      "week:",
+                      "",
+                    )}{" "}
+                    起生效；下周有足够核对记录后会显示结果。
+                  </small>
+                )}
                 <button className="primary-button" type="button" onClick={() => setReviewOpen(false)}>
                   收好备忘
                 </button>
               </div>
-            ) : (
-              <>
-                <div className="review-dialogue">
+            ) : reviewStage === "issue" ? (
+              <div className="review-stage">
+                <div className="review-dialogue focused">
                   <article>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={messenger.src} alt={messenger.identity} />
                     <div>
                       <strong>{messenger.identity}</strong>
-                      <p>“本周账册已经核对完毕，可以开议了。”</p>
+                      <p>
+                        “本周有 {reviewAnalysis.summary.expenseEntryCount} 笔已确认支出可以入议，
+                        近 28 天累计完成 {reviewAvailability.validCheckInDays} 次核对。”
+                      </p>
                     </div>
                   </article>
                   <article>
@@ -4001,59 +4197,152 @@ export default function Home() {
                       <p>“{reviewIssue.detail}”</p>
                     </div>
                   </article>
+                </div>
+                <div className="review-evidence">
+                  <span>本周证据</span>
+                  <div>
+                    <strong>
+                      {formatMoney(
+                        reviewAnalysis.summary.expenseTotal,
+                        activeCurrency,
+                      )}
+                    </strong>
+                    <small>全部支出</small>
+                  </div>
+                  <div>
+                    <strong>
+                      {formatMoney(
+                        reviewAnalysis.summary.adjustableExpenseTotal,
+                        activeCurrency,
+                      )}
+                    </strong>
+                    <small>可调整支出</small>
+                  </div>
+                  <div>
+                    <strong>
+                      {reviewAnalysis.summary.adjustableExpenseEntryCount}
+                    </strong>
+                    <small>可调整笔数</small>
+                  </div>
+                </div>
+                <button
+                  className="primary-button full"
+                  type="button"
+                  onClick={() =>
+                    setReviewStage(
+                      reviewAnalysis.status === "issue"
+                        ? "options"
+                        : "confirm",
+                    )
+                  }
+                >
+                  {reviewAnalysis.status === "issue"
+                    ? "听取对策"
+                    : "记录本周结论"}
+                </button>
+              </div>
+            ) : reviewStage === "options" ? (
+              <div className="review-stage">
+                <div className="review-dialogue focused">
                   <article>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={companion.src} alt={companion.identity} />
                     <div>
                       <strong>{companion.identity}</strong>
-                      <p>“不用一次改很多。选一件下周真正做得到的事就好。”</p>
+                      <p>“只选一项下周真的会执行的决定，不需要一次改很多。”</p>
                     </div>
                   </article>
                 </div>
                 <div className="review-options">
                   <button
                     type="button"
-                    onClick={() =>
-                      saveReviewAction(
-                        "category-reference",
-                        `下周${reviewIssue.category}参考额度设为 ${formatMoney(reviewReference, activeCurrency)}`,
-                        reviewIssue.category,
-                        reviewReference,
-                      )
-                    }
+                    onClick={() => {
+                      setReviewChoice("category-reference");
+                      setReviewStage("confirm");
+                    }}
                   >
-                    <span>收紧一个方向</span>
-                    <strong>下周{reviewIssue.category}参考 {formatMoney(reviewReference, activeCurrency)}</strong>
-                    <small>保存后会出现在账房分类中，不改变本周账目。</small>
+                    <span>设置参考额</span>
+                    <strong>
+                      下周{reviewIssue.category}参考{" "}
+                      {formatMoney(reviewReference, activeCurrency)}
+                    </strong>
+                    <small>只影响下周的对比基准，不修改本周账目。</small>
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      saveReviewAction(
-                        "daily-reminder",
-                        `每天 ${book.profile.reminderTime} 提醒核对当天账目`,
-                      )
-                    }
+                    onClick={() => {
+                      setReviewChoice("observe");
+                      setReviewStage("confirm");
+                    }}
                   >
-                    <span>先补齐记录</span>
-                    <strong>每天 {book.profile.reminderTime} 核对一次</strong>
-                    <small>提醒只帮助补漏，不改变任何金额。</small>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      saveReviewAction(
-                        "observe-next-week",
-                        `本周暂不调整，继续观察${reviewIssue.category}`,
-                      )
-                    }
-                  >
-                    <span>信息还不够</span>
-                    <strong>本周先不调整</strong>
-                    <small>明确保留现状，下周再用新账目判断。</small>
+                    <span>继续观察</span>
+                    <strong>下周先保持记录，不设置额度</strong>
+                    <small>下周仍会复盘，但不会伪造节省结果。</small>
                   </button>
                 </div>
-              </>
+              </div>
+            ) : (
+              <div className="review-stage review-confirmation">
+                <span className="review-seal">核</span>
+                <h3>
+                  {reviewChoice === "category-reference"
+                    ? `下周${reviewIssue.category}参考额 ${formatMoney(
+                        reviewReference,
+                        activeCurrency,
+                      )}`
+                    : "下周继续记录，暂不设置参考额"}
+                </h3>
+                <div className="impact-preview">
+                  <div>
+                    <span>会改变</span>
+                    <strong>
+                      {reviewChoice === "category-reference"
+                        ? `${reviewIssue.category}的下周对比基准`
+                        : "下周复盘时保留观察结论"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>不会改变</span>
+                    <strong>本周账目、余额与安全可花</strong>
+                  </div>
+                  <div>
+                    <span>下周验证</span>
+                    <strong>用实际账目比较结果</strong>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() =>
+                      setReviewStage(
+                        reviewAnalysis.status === "issue"
+                          ? "options"
+                          : "issue",
+                      )
+                    }
+                  >
+                    返回
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={() =>
+                      saveReviewAction(
+                        reviewChoice ?? "observe",
+                        reviewChoice === "category-reference"
+                          ? reviewIssue.category
+                          : undefined,
+                        reviewChoice === "category-reference"
+                          ? reviewReference
+                          : undefined,
+                      )
+                    }
+                  >
+                    确认并保存
+                  </button>
+                </div>
+              </div>
             )}
           </section>
         </div>
@@ -4072,7 +4361,7 @@ export default function Home() {
               </button>
             </div>
             <p className="rank-modal-intro">
-              官阶只由有效核对日与周复盘推进；收入高低和记账笔数不会让人更快升官。
+              坚持完成每日核对与周议事，会积累政绩并逐步解锁新的仕途形象。
             </p>
             <div className="rank-gallery">
               {rankConfigs.map((item) => {

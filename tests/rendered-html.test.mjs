@@ -471,10 +471,16 @@ test("responsive visual foundation has blurred imagery and mobile layouts", () =
 
 test("dual-currency books stay separate throughout the page flow", () => {
   assert.match(pageSource, /chaozhang-real-v5/);
-  assert.match(pageSource, /currencyMeta\[currency\]\.label\}开销/);
-  assert.match(pageSource, /不同币种不会相加/);
   assert.match(pageSource, /getFinanceSnapshot\(activeBook, "CNY"\)/);
   assert.match(pageSource, /getFinanceSnapshot\(activeBook, "KRW"\)/);
+  assert.match(pageSource, /className="account-context"/);
+  assert.match(pageSource, /parseLedgerText\(recordInput, recordCurrency\)/);
+  const viewSwitchSource = pageSource.slice(
+    pageSource.indexOf("const selectCurrency"),
+    pageSource.indexOf("const saveSetup"),
+  );
+  assert.match(viewSwitchSource, /setActiveCurrency\(currency\)/);
+  assert.doesNotMatch(viewSwitchSource, /defaultCurrency/);
 });
 
 test("past calendar dates open a real backfill flow", () => {
