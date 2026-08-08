@@ -5,6 +5,7 @@ import {
   type RankKey,
   type RoomKey,
 } from "./world.ts";
+import { publicAsset } from "./public-asset.ts";
 
 export type SceneMediaAsset = {
   id: `${RankKey}.${RoomKey}.${FiscalStateKey}`;
@@ -23,9 +24,9 @@ const countySceneAsset = (
   fiscalState: FiscalStateKey,
 ): SceneMediaAsset => ({
   id: `county.${room}.${fiscalState}`,
-  poster: `/scenes/county/${room}/${fiscalState}/poster.webp`,
-  webm: `/scenes/county/${room}/${fiscalState}/loop.webm`,
-  mp4: `/scenes/county/${room}/${fiscalState}/loop.mp4`,
+  poster: publicAsset(`/scenes/county/${room}/${fiscalState}/poster.webp`),
+  webm: publicAsset(`/scenes/county/${room}/${fiscalState}/loop.webm`),
+  mp4: publicAsset(`/scenes/county/${room}/${fiscalState}/loop.mp4`),
 });
 
 /**

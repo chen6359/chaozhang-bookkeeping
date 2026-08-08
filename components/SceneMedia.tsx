@@ -80,13 +80,13 @@ export function SceneMedia({
       };
     }
 
-    if (!("IntersectionObserver" in window)) {
-      const frameId = window.requestAnimationFrame(() => {
+    if (typeof IntersectionObserver === "undefined") {
+      const frameId = requestAnimationFrame(() => {
         setShouldLoadMotion(true);
         setIsInViewport(true);
       });
       return () => {
-        window.cancelAnimationFrame(frameId);
+        cancelAnimationFrame(frameId);
         motionPreference.removeEventListener("change", syncMotionPreference);
         document.removeEventListener("visibilitychange", syncPageVisibility);
       };

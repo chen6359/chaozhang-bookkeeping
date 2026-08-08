@@ -2,6 +2,7 @@ import {
   getRankConfig,
   type RankKey,
 } from "./world.ts";
+import { publicAsset } from "./public-asset.ts";
 
 export const npcAssetRoutes = [
   "comic",
@@ -135,7 +136,7 @@ export function getNpcAssetPath(
   mood: NpcAssetMood,
 ): string {
   const rankKey = getRankConfig(rank).key;
-  return `/characters/npc/${route}/${rankKey}/${mood}.webp`;
+  return publicAsset(`/characters/npc/${route}/${rankKey}/${mood}.webp`);
 }
 
 export function getNpcPortraitAsset(

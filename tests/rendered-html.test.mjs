@@ -211,9 +211,9 @@ test("screenshot duplicate detection uses import key or reviewed ledger fields",
 });
 
 test("screenshot OCR keeps its worker, core and language model on the site", () => {
-  assert.match(screenshotOcrSource, /workerPath:\s*"\/ocr\/worker\.min\.js"/);
-  assert.match(screenshotOcrSource, /corePath:\s*"\/ocr\/core"/);
-  assert.match(screenshotOcrSource, /langPath:\s*"\/ocr\/lang"/);
+  assert.match(screenshotOcrSource, /workerPath:\s*publicAsset\("\/ocr\/worker\.min\.js"\)/);
+  assert.match(screenshotOcrSource, /corePath:\s*publicAsset\("\/ocr\/core"\)/);
+  assert.match(screenshotOcrSource, /langPath:\s*publicAsset\("\/ocr\/lang"\)/);
 });
 
 test("KRW screenshot candidates keep currency in review and duplicate identity", () => {

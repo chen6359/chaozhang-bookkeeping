@@ -2035,8 +2035,20 @@ export default function Home() {
   }
 
   if (!book.profile.onboarded) {
+    const setupBackground = getSceneMediaAsset(
+      "county",
+      "hall",
+      "stable",
+    ).poster;
     return (
-      <main className="setup-screen">
+      <main
+        className="setup-screen"
+        style={
+          {
+            "--setup-background": `url("${setupBackground}")`,
+          } as CSSProperties
+        }
+      >
         <section className="setup-panel">
           <div className="setup-heading">
             <span className="brand-seal">账</span>
@@ -3106,7 +3118,11 @@ export default function Home() {
                   ) : (
                     <>
                       <h2>本周数据还不足</h2>
-                      <p>{dueReviewEvaluation.message}</p>
+                      <p>
+                        {"message" in dueReviewEvaluation
+                          ? dueReviewEvaluation.message
+                          : "本周还没有足够的数据完成比较。"}
+                      </p>
                     </>
                   )}
                 </section>

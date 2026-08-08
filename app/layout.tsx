@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    "https://chen6359.github.io/chaozhang-bookkeeping/",
+  ),
   title: "朝账｜让每一笔收支改变眼前的世界",
   description: "从九品县令开始，用真实收支治理一个由财务行为驱动的架空王朝。",
   openGraph: {
@@ -11,7 +14,7 @@ export const metadata: Metadata = {
     locale: "zh_CN",
     images: [
       {
-        url: "/og.png",
+        url: "og.png",
         width: 1672,
         height: 941,
         alt: "朝账：同一座县衙因财务状态呈现兴盛与亏空两种面貌",
@@ -22,7 +25,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "朝账｜让每一笔收支改变眼前的世界",
     description: "从九品县令开始，让真实财务行为改变你的官署世界。",
-    images: ["/og.png"],
+    images: ["og.png"],
   },
 };
 

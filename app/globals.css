@@ -273,7 +273,7 @@ textarea:focus-visible {
   padding: clamp(20px, 5vw, 72px);
   background:
     linear-gradient(rgba(244, 236, 221, 0.86), rgba(244, 236, 221, 0.92)),
-    url("/scenes/county/hall/stable/poster.webp") center / cover fixed;
+    var(--setup-background) center / cover fixed;
 }
 
 .setup-panel {

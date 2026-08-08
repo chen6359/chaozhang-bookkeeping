@@ -1,6 +1,7 @@
 import { parseScreenshotText } from "./screenshot-import.ts";
 import type { CurrencyCode } from "./currency.ts";
 import type { LocalDateKey } from "./habit.ts";
+import { publicAsset } from "./public-asset.ts";
 
 export type ScreenshotOcrProgress = {
   progress: number;
@@ -97,9 +98,9 @@ export async function recognizeScreenshotLocally(
     if (cancelled) throw new DOMException("识别已取消", "AbortError");
     const { createWorker, OEM, PSM } = await import("tesseract.js");
     worker = await createWorker(["chi_sim", "eng"], OEM.LSTM_ONLY, {
-      workerPath: "/ocr/worker.min.js",
-      corePath: "/ocr/core",
-      langPath: "/ocr/lang",
+      workerPath: publicAsset("/ocr/worker.min.js"),
+      corePath: publicAsset("/ocr/core"),
+      langPath: publicAsset("/ocr/lang"),
       cacheMethod: "write",
       workerBlobURL: false,
       logger: (message) => {

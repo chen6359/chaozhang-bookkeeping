@@ -1,3 +1,5 @@
+import { publicAsset } from "./public-asset.ts";
+
 export const rankKeys = [
   "county",
   "prefecture",
@@ -66,14 +68,14 @@ const createPortraitAssets = (
   rank: RankKey,
 ): RankConfig["portraitAssets"] => ({
   male: {
-    stable: `/characters/player/male/${rank}/stable.webp`,
-    strained: `/characters/player/male/${rank}/strained.webp`,
-    deficit: `/characters/player/male/${rank}/deficit.webp`,
+    stable: publicAsset(`/characters/player/male/${rank}/stable.webp`),
+    strained: publicAsset(`/characters/player/male/${rank}/strained.webp`),
+    deficit: publicAsset(`/characters/player/male/${rank}/deficit.webp`),
   },
   female: {
-    stable: `/characters/player/female/${rank}/stable.webp`,
-    strained: `/characters/player/female/${rank}/strained.webp`,
-    deficit: `/characters/player/female/${rank}/deficit.webp`,
+    stable: publicAsset(`/characters/player/female/${rank}/stable.webp`),
+    strained: publicAsset(`/characters/player/female/${rank}/strained.webp`),
+    deficit: publicAsset(`/characters/player/female/${rank}/deficit.webp`),
   },
 });
 
@@ -123,7 +125,7 @@ export const rankConfigs: readonly RankConfig[] = [
       strained: "微微前倾核对账册，眉头收紧，手边摊开支出单。",
       deficit: "收紧袖口并抱住修缮清单，神情坚定而非沮丧。",
     },
-    sceneAsset: "/world-county-rooms.jpg",
+    sceneAsset: publicAsset("/world-county-rooms.jpg"),
     portraitAssets: createPortraitAssets("county"),
     rooms: {
       hall: {
@@ -171,7 +173,7 @@ export const rankConfigs: readonly RankConfig[] = [
       strained: "侧身查看府库清册，另一手指向需要收缩的项目。",
       deficit: "手持封存清单与修缮令，在空出的陈设位前主持止损。",
     },
-    sceneAsset: "/world-prefecture-rooms.jpg",
+    sceneAsset: publicAsset("/world-prefecture-rooms.jpg"),
     portraitAssets: createPortraitAssets("prefecture"),
     rooms: {
       hall: {
@@ -219,7 +221,7 @@ export const rankConfigs: readonly RankConfig[] = [
       strained: "双手压住摊开的区域账图，神情严肃但姿态稳定。",
       deficit: "一手执修复次序，一手按住撤项图，体现承担而非失势。",
     },
-    sceneAsset: "/world-governor-rooms.jpg",
+    sceneAsset: publicAsset("/world-governor-rooms.jpg"),
     portraitAssets: createPortraitAssets("governor"),
     rooms: {
       hall: {
@@ -267,7 +269,7 @@ export const rankConfigs: readonly RankConfig[] = [
       strained: "坐于长案前逐项批阅缩减清单，身边侍从减少。",
       deficit: "站立封存非必要仪仗，亲自签署修缮先后令。",
     },
-    sceneAsset: "/world-regent-rooms.jpg",
+    sceneAsset: publicAsset("/world-regent-rooms.jpg"),
     portraitAssets: createPortraitAssets("regent"),
     rooms: {
       hall: {
@@ -315,7 +317,7 @@ export const rankConfigs: readonly RankConfig[] = [
       strained: "离开高座俯身查看国库与工程图，神情专注。",
       deficit: "立于清空后的御案旁签署裁撤与修复令，保持掌控感。",
     },
-    sceneAsset: "/world-emperor-rooms.jpg",
+    sceneAsset: publicAsset("/world-emperor-rooms.jpg"),
     portraitAssets: createPortraitAssets("emperor"),
     rooms: {
       hall: {
