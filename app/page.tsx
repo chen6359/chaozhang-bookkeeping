@@ -991,6 +991,8 @@ export default function Home() {
       (todayLedger.length > 0 || todayCheck.noSpendConfirmed),
   );
   const wallpaperStyle = getWallpaperStyle(rank, currentRoom, fiscalState);
+  const homeSceneMedia = getSceneMediaAsset(rank, "hall", fiscalState);
+  const homeStateCopy = getFiscalStateCopy(rank, fiscalState, "hall");
 
   const startMode = (nextMode: Mode) => {
     const key = nextMode === "real" ? realStorageKey : demoStorageKey;
@@ -2445,7 +2447,7 @@ export default function Home() {
   );
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell app-tab-${tab}`}>
       <div className="app-wallpaper" style={wallpaperStyle} />
       <header className="app-header">
         <button
@@ -2504,105 +2506,109 @@ export default function Home() {
 
       <div className="page-content">
         {tab === "home" && (
-          <div className="page-stack">
-            <section className="rank-hero">
+          <div className="page-stack home-ledger">
+            <section
+              className={`home-command home-command-${fiscalState}`}
+              aria-label={`${rankConfig.residenceName}当前财务状态`}
+            >
+              <SceneMedia media={homeSceneMedia} eagerPoster />
+              <div className="home-command-shade" />
+
+              <div className="home-command-topline">
+                <span>
+                  {currencyMeta[activeCurrency].label}账本 · {getRoomConfig(rank, "hall").name}
+                </span>
+                <strong data-state={fiscalState}>{homeStateCopy.label}</strong>
+              </div>
+
               <button
-                className="player-portrait-button"
+                className="home-player"
                 type="button"
                 onClick={() => setRankArchiveOpen(true)}
+                aria-label={`查看${getRankDisplayName(rank, gender)}的仕途与人物`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={portrait.src} alt={`${getRankDisplayName(rank, gender)}人物形象`} />
-                <span>查看仕途与人物</span>
+                <img src={portrait.src} alt="" />
+                <span>人物与仕途</span>
               </button>
-              <div className="rank-copy">
-                <span className="eyebrow">当前官阶</span>
-                <h1>{getRankDisplayName(rank, gender)}</h1>
-                <p>{book.profile.name} · {rankConfig.residenceName}</p>
-                <div className="habit-progress">
-                  <div>
-                    <span>记账习惯政绩</span>
-                    <b>{habitProgress.merit}</b>
-                  </div>
-                  {habitProgress.rank.nextKey ? (
-                    <>
-                      <progress
-                        max="1"
-                        value={habitProgress.rank.progressToNextRank}
-                      />
-                      <small>
-                        再积累 {habitProgress.rank.meritToNextRank} 政绩晋升
-                        {getRankDisplayName(habitProgress.rank.nextKey)}
-                      </small>
-                    </>
-                  ) : (
-                    <small>仕途已至最高阶</small>
-                  )}
+
+              <div className="home-command-copy">
+                <span className="home-safe-label">
+                  {snapshot.rawSafeToSpendCents < 0 ? "已超出安全范围" : "现在安全可花"}
+                </span>
+                <strong className={snapshot.rawSafeToSpendCents < 0 ? "negative" : ""}>
+                  {formatMoney(toYuan(snapshot.rawSafeToSpendCents), activeCurrency)}
+                </strong>
+                <p>
+                  {snapshot.rawSafeToSpendCents < 0
+                    ? `距离安全线还差 ${formatMoney(toYuan(snapshot.safetyShortfallCents), activeCurrency)}，先查看待付项目和本期大额支出。`
+                    : snapshot.unpaidFixedExpenseCents > 0
+                      ? `已为待付项目预留 ${formatMoney(toYuan(snapshot.unpaidFixedExpenseCents), activeCurrency)}，账面余额 ${formatMoney(toYuan(snapshot.ledgerBalanceCents), activeCurrency)}。`
+                      : `账面余额 ${formatMoney(toYuan(snapshot.ledgerBalanceCents), activeCurrency)}，月末目标已纳入计算。`}
+                </p>
+              </div>
+            </section>
+
+            <section className="home-ledger-sheet" aria-label="本期账面摘要">
+              <div className="home-account-bar">
+                <div>
+                  <span>查看账本</span>
+                  <strong>{currencyMeta[activeCurrency].label}</strong>
+                </div>
+                <div className="home-currency-tabs" role="group" aria-label="切换查看的账本">
+                  {currencyCodes.map((currency) => (
+                    <button
+                      key={currency}
+                      type="button"
+                      aria-pressed={activeCurrency === currency}
+                      onClick={() => selectCurrency(currency)}
+                    >
+                      <span>{currencyMeta[currency].symbol}</span>
+                      <b>{currencyMeta[currency].label}</b>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="home-ledger-numbers">
+                <div>
+                  <span>本期到账</span>
+                  <strong>{formatMoney(toYuan(snapshot.openingBalanceCents + snapshot.transactions.additionalIncomeCents), activeCurrency)}</strong>
+                  <small>{book.profile.accounts[activeCurrency].fundingLabel}与结转</small>
+                </div>
+                <div>
+                  <span>已记支出</span>
+                  <strong>{formatMoney(toYuan(snapshot.transactions.netExpenseCents), activeCurrency)}</strong>
+                  <small>{book.ledger.filter((item) => item.direction === "支出" && item.currency === activeCurrency).length} 笔账</small>
+                </div>
+                <div>
+                  <span>待付预留</span>
+                  <strong>{formatMoney(toYuan(snapshot.unpaidFixedExpenseCents), activeCurrency)}</strong>
+                  <small>尚未记为实际支出</small>
+                </div>
+                <div>
+                  <span>{rankConfig.treasuryName}账面</span>
+                  <strong className={snapshot.ledgerBalanceCents < 0 ? "negative" : ""}>
+                    {formatMoney(toYuan(snapshot.ledgerBalanceCents), activeCurrency)}
+                  </strong>
+                  <small>按已确认账目计算</small>
+                </div>
+              </div>
+
+              <div className="home-merit-strip">
+                <div>
+                  <span>{getRankDisplayName(rank, gender)} · 记账政绩 {habitProgress.merit}</span>
+                  <small>
+                    {habitProgress.rank.nextKey
+                      ? `再积累 ${habitProgress.rank.meritToNextRank} 政绩，晋升${getRankDisplayName(habitProgress.rank.nextKey)}`
+                      : "仕途已至最高阶"}
+                  </small>
                 </div>
               </div>
             </section>
 
-            <section className="account-context" aria-label="切换查看的账本">
-              <span>当前账本</span>
-              <div>
-                {currencyCodes.map((currency) => (
-                  <button
-                    key={currency}
-                    type="button"
-                    aria-pressed={activeCurrency === currency}
-                    onClick={() => selectCurrency(currency)}
-                  >
-                    <strong>{currencyMeta[currency].label}</strong>
-                    <small>
-                      已用{" "}
-                      {formatMoney(
-                        toYuan(
-                          snapshots[currency].transactions.netExpenseCents,
-                        ),
-                        currency,
-                      )}
-                    </small>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="finance-overview">
-              <div>
-                <span>本期到账</span>
-                <strong>{formatMoney(toYuan(snapshot.openingBalanceCents + snapshot.transactions.additionalIncomeCents), activeCurrency)}</strong>
-                <small>{book.profile.accounts[activeCurrency].fundingLabel}与结转</small>
-              </div>
-              <div>
-                <span>已记支出</span>
-                <strong>{formatMoney(toYuan(snapshot.transactions.netExpenseCents), activeCurrency)}</strong>
-                <small>{book.ledger.filter((item) => item.direction === "支出" && item.currency === activeCurrency).length} 笔</small>
-              </div>
-              <div>
-                <span>{rankConfig.treasuryName}账面</span>
-                <strong className={snapshot.ledgerBalanceCents < 0 ? "negative" : ""}>
-                  {formatMoney(toYuan(snapshot.ledgerBalanceCents), activeCurrency)}
-                </strong>
-                <small>按已记录账目估算</small>
-              </div>
-              <div className="safe-spend-card">
-                <span>现在安全可花</span>
-                <strong className={snapshot.rawSafeToSpendCents < 0 ? "negative" : ""}>
-                  {formatMoney(toYuan(snapshot.rawSafeToSpendCents), activeCurrency)}
-                </strong>
-                <small>已扣除留存目标与待付项目</small>
-              </div>
-            </section>
-
-            <WorldScene
-              rank={rank}
-              room="hall"
-              fiscalState={fiscalState}
-              balance={toYuan(snapshot.ledgerBalanceCents)}
-              currency={activeCurrency}
-            />
-
-            <section className={`daily-check ${todayChecked ? "complete" : ""}`}>
+            <section className={`home-daily-check ${todayChecked ? "complete" : ""}`}>
+              <span className="home-check-seal" aria-hidden="true">{todayChecked ? "讫" : "核"}</span>
               <div className="daily-check-copy">
                 <span className="eyebrow">今日核对</span>
                 <h2>{todayChecked ? "今天的账已经核对" : "今天的消费都记齐了吗？"}</h2>
@@ -2636,7 +2642,7 @@ export default function Home() {
               )}
             </section>
 
-            <section className="section-card">
+            <section className="home-entry-ledger">
               <div className="section-heading">
                 <div>
                   <span className="eyebrow">最近账目</span>
@@ -2690,13 +2696,13 @@ export default function Home() {
         )}
 
         {tab === "treasury" && (
-          <div className="page-stack">
-            <div className="page-title">
-              <h1>{rankConfig.treasuryName}账房</h1>
-            </div>
-            <section className="account-context compact" aria-label="切换查看的账本">
-              <span>查看账本</span>
+          <div className="page-stack office-page treasury-page">
+            <header className="office-heading treasury-heading">
               <div>
+                <span className="eyebrow">账面与流水</span>
+                <h1>{rankConfig.treasuryName}</h1>
+              </div>
+              <div className="home-currency-tabs page-currency-tabs" role="group" aria-label="切换查看的账本">
                 {currencyCodes.map((currency) => (
                   <button
                     key={currency}
@@ -2704,18 +2710,12 @@ export default function Home() {
                     aria-pressed={activeCurrency === currency}
                     onClick={() => selectCurrency(currency)}
                   >
-                    <strong>{currencyMeta[currency].label}</strong>
-                    <small>
-                      账面{" "}
-                      {formatMoney(
-                        toYuan(snapshots[currency].ledgerBalanceCents),
-                        currency,
-                      )}
-                    </small>
+                    <span>{currencyMeta[currency].symbol}</span>
+                    <b>{currencyMeta[currency].label}</b>
                   </button>
                 ))}
               </div>
-            </section>
+            </header>
             <WorldScene
               rank={rank}
               room="treasury"
@@ -2723,7 +2723,7 @@ export default function Home() {
               balance={toYuan(snapshot.ledgerBalanceCents)}
               currency={activeCurrency}
             />
-            <section className="section-card formula-card">
+            <section className="section-card formula-card treasury-summary">
               <div className="section-heading">
                 <div>
                   <h2>{currencyMeta[activeCurrency].label}账面怎么算</h2>
@@ -2974,9 +2974,6 @@ export default function Home() {
                 <div>
                   <h2>全部流水</h2>
                 </div>
-                <button className="primary-button compact" type="button" onClick={() => openRecorder()}>
-                  + 记账
-                </button>
               </div>
               {book.ledger.some((item) => item.currency === activeCurrency) ? (
                 <div className="full-ledger">
@@ -3027,16 +3024,17 @@ export default function Home() {
         )}
 
         {tab === "council" && (
-          <div className="page-stack">
-            <div className="page-title">
-              <h1>每日核对与周议事</h1>
-            </div>
-            <section className="section-card council-entry">
+          <div className="page-stack office-page council-page">
+            <section className="section-card council-entry council-docket">
+              <header className="council-docket-heading">
+                <span className="eyebrow">本周复盘</span>
+                <h1>议事</h1>
+              </header>
               <div className="council-mark">
                 <strong>{continuity.rollingValidDays}</strong>
                 <span>近28天有效核对日</span>
               </div>
-              <div>
+              <div className="council-entry-copy">
                 <span className="eyebrow">
                   {currencyMeta[activeCurrency].label} · 本周复盘
                 </span>
@@ -3066,7 +3064,7 @@ export default function Home() {
                   开始本周议事
                 </button>
               ) : (
-                <button className="secondary-button" type="button" onClick={() => setTab("home")}>
+                <button className="primary-button" type="button" onClick={() => setTab("home")}>
                   去完成今日核对
                 </button>
               )}
@@ -3195,10 +3193,13 @@ export default function Home() {
         )}
 
         {tab === "build" && (
-          <div className="page-stack">
-            <div className="page-title">
-              <h1>建设与官阶</h1>
-            </div>
+          <div className="page-stack office-page build-page">
+            <header className="office-heading build-heading">
+              <div>
+                <span className="eyebrow">习惯成果</span>
+                <h1>建设</h1>
+              </div>
+            </header>
             <WorldScene
               rank={rank}
               room="works"
@@ -3223,9 +3224,6 @@ export default function Home() {
                   <span className="eyebrow">五阶仕途</span>
                   <h2>人物与官署共同成长</h2>
                 </div>
-                <button className="text-link" type="button" onClick={() => setRankArchiveOpen(true)}>
-                  打开图鉴
-                </button>
               </div>
               <div className="rank-road">
                 {rankConfigs.map((item) => {
@@ -3263,7 +3261,7 @@ export default function Home() {
         </button>
         <button className="record-nav" type="button" onClick={() => openRecorder()}>
           <span>＋</span>
-          <b>记账</b>
+          <b>记一笔</b>
         </button>
         <button
           type="button"
@@ -3294,7 +3292,7 @@ export default function Home() {
                     : recordStage.startsWith("screenshot")
                       ? "导入账单截图"
                       : recordTargetDate === today
-                        ? "记一笔账"
+                        ? "记一笔"
                         : `补记 ${recordTargetDate.slice(5)}`}
                 </h2>
               </div>

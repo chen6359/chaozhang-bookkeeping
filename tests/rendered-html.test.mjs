@@ -483,7 +483,7 @@ test("dual-currency books stay separate throughout the page flow", () => {
   assert.match(pageSource, /chaozhang-real-v5/);
   assert.match(pageSource, /getFinanceSnapshot\(activeBook, "CNY"\)/);
   assert.match(pageSource, /getFinanceSnapshot\(activeBook, "KRW"\)/);
-  assert.match(pageSource, /className="account-context"/);
+  assert.match(pageSource, /className="home-currency-tabs"/);
   assert.match(pageSource, /parseLedgerText\(recordInput, recordCurrency\)/);
   const viewSwitchSource = pageSource.slice(
     pageSource.indexOf("const selectCurrency"),
