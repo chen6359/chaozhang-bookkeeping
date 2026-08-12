@@ -463,6 +463,42 @@ test("every navigation destination and central bookkeeping action is real", () =
   assert.match(pageSource, /onClick=\{\(\) => openRecorder\(\)\}/);
 });
 
+test("office destinations share one app page stack without duplicate page headings", () => {
+  assert.equal((pageSource.match(/className="app-header"/gu) ?? []).length, 1);
+  assert.equal(
+    (pageSource.match(/<header className=\{`app-page-bar/gu) ?? []).length,
+    1,
+  );
+  assert.match(pageSource, /appPageMeta/);
+  assert.match(pageSource, /app-page-identity/);
+  assert.match(pageSource, /app-page-actions/);
+
+  for (const legacyHeading of [
+    "office-heading",
+    "treasury-heading",
+    "build-heading",
+    "council-docket-heading",
+  ]) {
+    assert.doesNotMatch(pageSource, new RegExp(legacyHeading));
+  }
+});
+
+test("mobile page stacks prevent layout overflow without hiding it at the shell", () => {
+  assert.match(
+    styleSource,
+    /\.office-page\s*>\s*\*[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/u,
+  );
+  assert.match(styleSource, /\.rank-road\s*\{[\s\S]*?overflow-x:\s*auto;/u);
+
+  for (const shellSelector of ["html", "body", ".app-shell", ".page-content"]) {
+    const escaped = shellSelector.replace(".", "\\.");
+    assert.doesNotMatch(
+      styleSource,
+      new RegExp(`${escaped}\\s*\\{[^}]*overflow-x:\\s*(?:hidden|clip)`, "u"),
+    );
+  }
+});
+
 test("daily check and weekly decision are state-changing interactions", () => {
   assert.match(pageSource, /markTodayChecked/);
   assert.match(pageSource, /saveReviewAction/);

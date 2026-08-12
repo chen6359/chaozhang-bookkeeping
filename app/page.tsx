@@ -2445,6 +2445,29 @@ export default function Home() {
     book.profile.presentation,
     npcMood,
   );
+  const appPageMeta =
+    tab === "treasury"
+      ? {
+          glyph: "库",
+          eyebrow: "账面与流水",
+          title: rankConfig.treasuryName,
+          description: "查看余额、待付项目和每笔流水。",
+        }
+      : tab === "council"
+        ? {
+            glyph: "议",
+            eyebrow: "本周复盘",
+            title: "议事",
+            description: "回看本周账目，只决定下周要调整的一件事。",
+          }
+        : tab === "build"
+          ? {
+              glyph: "建",
+              eyebrow: "习惯成果",
+              title: "建设",
+              description: "查看持续记账带来的府邸与仕途变化。",
+            }
+          : null;
 
   return (
     <main className={`app-shell app-tab-${tab}`}>
@@ -2505,6 +2528,46 @@ export default function Home() {
       </header>
 
       <div className="page-content">
+        {appPageMeta && (
+          <header className={`app-page-bar app-page-bar-${tab}`}>
+            <div className="app-page-identity">
+              <span className="app-page-glyph" aria-hidden="true">
+                {appPageMeta.glyph}
+              </span>
+              <div className="app-page-copy">
+                <span className="eyebrow">{appPageMeta.eyebrow}</span>
+                <h1>{appPageMeta.title}</h1>
+                <p>{appPageMeta.description}</p>
+              </div>
+            </div>
+            <div className="app-page-actions">
+              {tab === "treasury" || tab === "council" ? (
+                <div
+                  className="home-currency-tabs page-currency-tabs"
+                  role="group"
+                  aria-label="切换查看的账本"
+                >
+                  {currencyCodes.map((currency) => (
+                    <button
+                      key={currency}
+                      type="button"
+                      aria-pressed={activeCurrency === currency}
+                      onClick={() => selectCurrency(currency)}
+                    >
+                      <span>{currencyMeta[currency].symbol}</span>
+                      <b>{currencyMeta[currency].label}</b>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="app-page-stat" aria-label={`累计政绩 ${habitProgress.merit}`}>
+                  <span>累计政绩</span>
+                  <strong>{habitProgress.merit}</strong>
+                </div>
+              )}
+            </div>
+          </header>
+        )}
         {tab === "home" && (
           <div className="page-stack home-ledger">
             <section
@@ -2697,25 +2760,6 @@ export default function Home() {
 
         {tab === "treasury" && (
           <div className="page-stack office-page treasury-page">
-            <header className="office-heading treasury-heading">
-              <div>
-                <span className="eyebrow">账面与流水</span>
-                <h1>{rankConfig.treasuryName}</h1>
-              </div>
-              <div className="home-currency-tabs page-currency-tabs" role="group" aria-label="切换查看的账本">
-                {currencyCodes.map((currency) => (
-                  <button
-                    key={currency}
-                    type="button"
-                    aria-pressed={activeCurrency === currency}
-                    onClick={() => selectCurrency(currency)}
-                  >
-                    <span>{currencyMeta[currency].symbol}</span>
-                    <b>{currencyMeta[currency].label}</b>
-                  </button>
-                ))}
-              </div>
-            </header>
             <WorldScene
               rank={rank}
               room="treasury"
@@ -3026,10 +3070,6 @@ export default function Home() {
         {tab === "council" && (
           <div className="page-stack office-page council-page">
             <section className="section-card council-entry council-docket">
-              <header className="council-docket-heading">
-                <span className="eyebrow">本周复盘</span>
-                <h1>议事</h1>
-              </header>
               <div className="council-mark">
                 <strong>{continuity.rollingValidDays}</strong>
                 <span>近28天有效核对日</span>
@@ -3194,12 +3234,6 @@ export default function Home() {
 
         {tab === "build" && (
           <div className="page-stack office-page build-page">
-            <header className="office-heading build-heading">
-              <div>
-                <span className="eyebrow">习惯成果</span>
-                <h1>建设</h1>
-              </div>
-            </header>
             <WorldScene
               rank={rank}
               room="works"
